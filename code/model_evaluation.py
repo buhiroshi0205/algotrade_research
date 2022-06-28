@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 
-from dataset import DailyDataset, DatasetFFD, FEATURES
+from dataset import DailyDataset, FEATURES
 
 TRADING_DAYS_IN_YEAR = 261
 
@@ -79,25 +79,4 @@ def evaluate_daily_model(model, val_ds: DailyDataset, device: torch.device) -> M
         conf_matrix[0, 1] += np.sum((direction == 1) & (true_direction == -1))
         conf_matrix[1, 0] += np.sum((direction == -1) & (true_direction == 1))
         conf_matrix[1, 1] += np.sum((direction == 1) & (true_direction == 1))
-    return ModelEvaluation(daily_returns, daily_bnh_returns,conf_matrix)
-
-def evaluate_ffd_model(model, val_ds: DatasetFFD, device=torch.device) -> ModelEvaluation:
-    daily_returns = []
-    daily_bnh_returns = []
-    conf_matrix = np.zeros((2, 2))
-
-    val_loader = DataLoader(val_ds, batch_size=64, shuffle=False)
-    for X, move, label in tqdm(val_loader, desc="Eval", leave=False):
-        X = X.to(device)
-        move = move.numpy()
-        y_pred = model(X).cpu()
-        directions = np.where(y_pred >= 0, 1, -1)
-        daily_returns += list(directions * move)
-        daily_bnh_returns += list(move)
-        label = np.where(label == 0, 1, label)
-        
-        conf_matrix[0, 0] += np.sum((directions == -1) & (label == -1))
-        conf_matrix[0, 1] += np.sum((directions == 1) & (label == -1))
-        conf_matrix[1, 0] += np.sum((directions == -1) & (label == 1))
-        conf_matrix[1, 1] += np.sum((directions == 1) & (label == 1))
     return ModelEvaluation(daily_returns, daily_bnh_returns,conf_matrix)

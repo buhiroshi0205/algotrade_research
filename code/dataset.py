@@ -69,33 +69,6 @@ class DailyDataset(Dataset):
             return x.double(), y.double(), move.double(), x_mean[0], x_std[0]
         return x.double(), y.double(), move.double()
 
-class DatasetFFD(Dataset):
-    def __init__(self, df: pd.DataFrame, lookback: int, mean: torch.Tensor = ..., std: torch.Tensor = ...) -> None:
-        super().__init__()
-        self.df = df
-        self.lookback = lookback
-        
-        self.mean = mean
-        self.std = std
-        if mean == ...:
-            self.mean = torch.mean(torch.tensor(df.iloc[:, 1:-2].values, dtype=torch.float64), dim=0)
-        if std == ...:
-            self.std = torch.std(torch.tensor(df.iloc[:, 1:-2].values, dtype=torch.float64), dim=0, unbiased=True)
-
-    def __len__(self) -> int:
-        return len(self.df.index) - self.lookback
-
-    def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        i = self.df.index[index]
-        j = self.df.index[index + self.lookback - 1]
-
-        data = torch.tensor(self.df.loc[i:j].iloc[:, 1:].values)
-        x = data[:, :-2].to(torch.float64)
-        move = data[-1, -2].to(torch.float64)
-        label = data[-1, -1].to(torch.float64)
-        x = (x - self.mean) / self.std
-        return x, move, label
-
 def get_daily_dataset(df: pd.DataFrame, look_backward: int, val_start: dt.datetime,
                       test_start: dt.datetime, div_df=None) -> Tuple[DailyDataset, DailyDataset, DailyDataset]:
     all_dates = pd.to_datetime(df["Dates"])
@@ -106,35 +79,3 @@ def get_daily_dataset(df: pd.DataFrame, look_backward: int, val_start: dt.dateti
     val_df = df.loc[first_val - look_backward + 1: first_test]
     test_df = df.loc[first_test - look_backward + 1:]
     return DailyDataset(train_df, look_backward, div_df), DailyDataset(val_df, look_backward, div_df), DailyDataset(test_df, look_backward, div_df)
-
-def get_ffd_dataset(df: pd.DataFrame, look_backward: int, val_start: dt.datetime,
-                    test_start: dt.datetime) -> Tuple[DatasetFFD, DatasetFFD, DatasetFFD]:
-    all_dates = pd.to_datetime(df["Dates"])
-    
-    first_val = df.index[all_dates >= val_start][0]
-    first_test = df.index[all_dates >= test_start][0]
-    
-    train_df = df.loc[:first_val]
-    val_df = df.loc[first_val - look_backward + 1: first_test]
-    test_df = df.loc[first_test - look_backward + 1:]
-
-    train_ds = DatasetFFD(train_df, look_backward)
-    val_ds = DatasetFFD(val_df, look_backward, train_ds.mean, train_ds.std)
-    test_ds = DatasetFFD(test_df, look_backward, train_ds.mean, train_ds.std)
-    return train_ds, val_ds, test_ds
-
-# test code
-if __name__ == "__main__":
-    filename = os.path.join("data", "Day Data with Volatility", "NESZ MK Equity.csv")
-    # filename = "NESZ_ffd.csv"
-    df = pd.read_csv(filename)
-    div_df = pd.read_csv(os.path.join("data", "NESZ dividend.csv"))
-    train_ds, val_ds, test_ds = get_daily_dataset(df, 30, dt.datetime(2018, 1, 1), dt.datetime(2020, 1, 1), div_df)
-    pd.set_option('display.max_rows', 500)
-    print(train_ds.df[["Dates", "PX_LAST", "PX_LAST_ADJUSTED"]].tail(100))
-    # train_ds, val_ds, test_ds = get_ffd_dataset(df, 30, val_start=dt.datetime(2018, 1, 1), test_start=dt.datetime(2020, 1, 1))
-    # print(train_ds[0])
-    # print(len(df))
-    # print(len(train_ds))
-    # print(len(val_ds))
-    # print(len(test_ds))
