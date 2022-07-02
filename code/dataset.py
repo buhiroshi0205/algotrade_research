@@ -49,8 +49,8 @@ class DailyDataset(Dataset):
 
     def __getitem__(self, index: int, return_scale: bool=False) -> Tuple[Tensor, Tensor, Tensor]:
         i = self.use_index[index]
-        x = torch.tensor(self.df.loc[(i - self.look_backward):(i-1)][FEATURES].values)
-        y = torch.tensor(self.df.loc[i][LABEL])
+        x = torch.tensor(self.df.loc[(i - self.look_backward):(i-1)][FEATURES].values, dtype=torch.float)
+        y = torch.tensor(self.df.loc[i][LABEL], dtype=torch.float)
 
         # Standardization
         x_std, x_mean = torch.std_mean(x[:, :RSI_RANGE_START], dim=0, unbiased=True)
@@ -66,8 +66,8 @@ class DailyDataset(Dataset):
         move = torch.tensor(self.df.loc[i]["PX_LAST_ADJUSTED"] / self.df.loc[i-1]["PX_LAST_ADJUSTED"] - 1)
 
         if return_scale:
-            return x.double(), y.double(), move.double(), x_mean[0], x_std[0]
-        return x.double(), y.double(), move.double()
+            return x, y, move, x_mean[0], x_std[0]
+        return x, y, move
 
 def get_daily_dataset(df: pd.DataFrame, look_backward: int, val_start: dt.datetime,
                       test_start: dt.datetime, div_df=None) -> Tuple[DailyDataset, DailyDataset, DailyDataset]:

@@ -80,3 +80,18 @@ def evaluate_daily_model(model, val_ds: DailyDataset, device: torch.device) -> M
         conf_matrix[1, 0] += np.sum((direction == -1) & (true_direction == 1))
         conf_matrix[1, 1] += np.sum((direction == 1) & (true_direction == 1))
     return ModelEvaluation(daily_returns, daily_bnh_returns,conf_matrix)
+
+
+
+class EnsembleModel(Module):
+    def __init__(self, models) -> None:
+        super(EnsembleModel, self).__init__()
+        self.models = ModuleList(models)
+    
+    def forward(self, X, return_std=False) -> torch.Tensor:
+        preds = torch.zeros((X.shape[0], len(self.models)))
+        for i in range(len(self.models)):
+            preds[:, i] = self.models[i](X)
+        if return_std:
+            return torch.std_mean(preds, dim=1, unbiased=True)
+        return torch.mean(preds, dim=1)
