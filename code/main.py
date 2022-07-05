@@ -2,6 +2,7 @@ import multiprocessing as mp
 import math
 import datetime as dt
 import time
+import os
 
 import pandas as pd
 import torch
@@ -9,7 +10,6 @@ from tqdm import tqdm
 
 import dataset
 import train_models
-import utils
 
 symbols = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "MAY", "MISC", "NESZ", "PBK", "PEP", "PETD", "PTG", "RHBBANK", "ROTH", "T", "TNB"]
 ensemble_num = 10
@@ -30,9 +30,11 @@ def run(stocks, idx):
             pbar.set_description(f'{stock}-{i}/{ensemble_num}')
 
             train_config = {
-              'model_name': 'default',
+              'model_name': 'deeper',
               'model_params': {'dim_0': len(dataset.FEATURES)},
-              'epochs': 1,
+              'optimizer_name': 'Adam',
+              'optimizer_params': {'weight_decay': 0.0001},
+              'epochs': 5,
               'device_name': f'cuda:{idx}'
             }
 
@@ -43,7 +45,7 @@ def run(stocks, idx):
 
 
 if __name__ == '__main__':
-    utils.make_directories(experiment_name)
+    os.makedirs(f'../models/{experiment_name}', exist_ok=True)
     if processes == 1:
         run(symbols, 0)
     else:

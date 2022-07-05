@@ -1,7 +1,8 @@
-from . import default
+from . import default, deeper
 
 name_mapping = {
-    'default': default
+    'default': default,
+    'deeper': deeper
 }
 
 def get_model(name, *args, **kwargs):

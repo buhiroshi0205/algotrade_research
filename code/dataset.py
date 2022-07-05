@@ -43,14 +43,20 @@ class DailyDataset(Dataset):
 
         self.look_backward = look_backward
         self.use_index = self.df.index[look_backward:]
+
+        self.tensorx = torch.tensor(self.df[FEATURES].values, dtype=torch.float)
+        self.tensory = torch.tensor(self.df[LABEL].values, dtype=torch.float)
+        self.adjusted = self.df["PX_LAST_ADJUSTED"].values
     
     def __len__(self) -> int:
         return len(self.use_index)
 
     def __getitem__(self, index: int, return_scale: bool=False) -> Tuple[Tensor, Tensor, Tensor]:
         i = self.use_index[index]
-        x = torch.tensor(self.df.loc[(i - self.look_backward):(i-1)][FEATURES].values, dtype=torch.float)
-        y = torch.tensor(self.df.loc[i][LABEL], dtype=torch.float)
+        #x = torch.tensor(self.df.loc[(i - self.look_backward):(i-1)][FEATURES].values, dtype=torch.float)
+        #y = torch.tensor(self.df.loc[i][LABEL], dtype=torch.float)
+        x = self.tensorx[index:index+self.look_backward]
+        y = self.tensory[index+self.look_backward]
 
         # Standardization
         x_std, x_mean = torch.std_mean(x[:, :RSI_RANGE_START], dim=0, unbiased=True)
@@ -63,7 +69,8 @@ class DailyDataset(Dataset):
         if RSI_RANGE_END > RSI_RANGE_START:
             x[:, RSI_RANGE_START:RSI_RANGE_END] /= 100
 
-        move = torch.tensor(self.df.loc[i]["PX_LAST_ADJUSTED"] / self.df.loc[i-1]["PX_LAST_ADJUSTED"] - 1)
+        #move = torch.tensor(self.df.loc[i]["PX_LAST_ADJUSTED"] / self.df.loc[i-1]["PX_LAST_ADJUSTED"] - 1)
+        move = self.adjusted[index+self.look_backward] / self.adjusted[index+self.look_backward-1] - 1
 
         if return_scale:
             return x, y, move, x_mean[0], x_std[0]
