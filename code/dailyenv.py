@@ -15,14 +15,13 @@ from tqdm import tqdm
 
 class DailyTradingEnv(gym.Env):
 
-    def __init__(self, tickers: List, start_date: dt.datetime, end_date: dt.datetime, logname: str = None, redistribution: float = 0) -> None:
+    def __init__(self, tickers: List, start_date: dt.datetime, end_date: dt.datetime, directions_src: str, logname: str = None) -> None:
         super(DailyTradingEnv, self).__init__()
         self.tickers = tickers
         self.start = start_date
         self.end_date = end_date
-        self.pretrain = False
         
-        self.dates = pd.read_csv(os.path.join("../data", "day_data", f"{tickers[0]} MK Equity.csv"), parse_dates=True, index_col="Dates").loc[start_date:end_date].index.to_numpy()
+        self.dates = pd.read_csv(f'../data/day_data/{tickers[0]} MK Equity.csv', parse_dates=True, index_col="Dates").loc[start_date:end_date].index.to_numpy()
         self.logs = {'actions': [], 'rewards': [], 'bankroll': []}
 
         self.last_prices = []
@@ -34,21 +33,14 @@ class DailyTradingEnv(gym.Env):
         self.observation_space = spaces.Box(low=0, high=1, shape=(len(tickers),))
 
         for ticker in tqdm(tickers):
-            day_data_df = pd.read_csv(os.path.join("../data", "day_data", f"{ticker} MK Equity.csv"), parse_dates=True, index_col="Dates").loc[start_date:end_date]
+            day_data_df = pd.read_csv(f'../data/day_data/{ticker} MK Equity.csv', parse_dates=True, index_col="Dates").loc[start_date:end_date]
             self.last_prices.append(day_data_df["PX_LAST"].to_numpy())
             
-            directions_df = pd.read_csv(os.path.join("../data/directions/2010split", f"Directions {ticker}.csv"), parse_dates=True, index_col="Dates").loc[start_date:end_date][1:]
-            if 'AVG' in directions_df:
-                directions_df = directions_df.drop(columns='AVG')
-            directions_np = (directions_df==1).sum(axis=1).to_numpy()/10
-            if redistribution > 0:
-                random_loc = np.random.rand(*directions_np.shape) < redistribution
-                random_dir = np.random.randint(0,11,size=directions_np.shape)/10
-                self.directions.append(np.where(random_loc, random_dir, directions_np))
-            else:
-                self.directions.append(directions_np)
+            directions_df = pd.read_csv(f'../data/directions/{directions_src}/Directions {ticker}.csv', parse_dates=True, index_col="Dates").loc[start_date:end_date][1:]
+            directions_np = (directions_df.drop(columns='AVG') == 1).sum(axis=1).to_numpy()/10
+            self.directions.append(directions_np)
             
-            dividend_df = pd.read_csv(os.path.join("../data", "dividends", f"{ticker} dividend.csv"), parse_dates=True, index_col="Date").loc[start_date:end_date]
+            dividend_df = pd.read_csv(f'../data/dividends/{ticker} dividend.csv', parse_dates=True, index_col="Date").loc[start_date:end_date]
             s = pd.Series(data=0, index=self.dates)
             for k, v in dividend_df['Dividends'].iteritems():
                 s[k] = v
@@ -67,7 +59,7 @@ class DailyTradingEnv(gym.Env):
         self.current_balance = 100000
         self.last_reward = 0
         
-        self.tf_logger = TensorBoardLogger('tensorboard_log', logname) if logname is not None else None
+        self.tf_logger = TensorBoardLogger('../tensorboard_logs', logname) if logname is not None else None
         
     def step(self, action: np.ndarray):
         assert len(action) == len(self.tickers) + 1
@@ -86,18 +78,7 @@ class DailyTradingEnv(gym.Env):
         profits = np.dot(next_prices - curr_prices, shares)
         div_received = np.dot(next_day_div, shares)
 
-        if self.pretrain:
-            target = np.zeros(len(self.tickers)+1)
-            for i in range(len(self.tickers)):
-                if self.last_obs[i] * 10 >= 10:
-                    target[i+1] = 1
-            #target = np.concatenate(([0.], self.desired_action))
-            if np.sum(target) > 0:
-                reward = 0.1 if np.all(target == action) else 0
-            else:
-                reward = 0.01 if np.all(target == action) else 0
-        else:
-            reward = self._calc_reward(profits, div_received)
+        reward = self._calc_reward(profits, div_received)
 
         self.current_balance += profits + div_received
         self.curr_index += 1
@@ -105,8 +86,6 @@ class DailyTradingEnv(gym.Env):
         self.last_reward = reward
     
         obs, rew, done, info = self._get_obs(), reward, self.curr_index == self.period_length, {}
-        if self.pretrain:
-            self.last_obs = obs
        
         self.current_log['actions'].append(action)
         self.current_log['rewards'].append(rew)
@@ -126,12 +105,8 @@ class DailyTradingEnv(gym.Env):
         self.current_balance = 100000
         self.last_reward = 0
         self.current_log = {'actions': [], 'rewards': [], 'bankroll': []}
-        obs = self._get_obs()
-        if self.pretrain:
-            self.last_obs = obs
-        
         self.current_log['bankroll'].append(self.current_balance)
-        return obs
+        return self._get_obs()
 
     def render(self, mode="human"):
         return super().render(mode)
