@@ -1,21 +1,14 @@
 from typing import List, Callable
 import datetime as dt
-import os
-from statistics import stdev
 
 import gym
 from gym import spaces
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from torch.utils.tensorboard import SummaryWriter
-
-import quantstats as qs
-from tqdm import tqdm
 
 class DailyTradingEnv(gym.Env):
 
-    def __init__(self, tickers: List, start_date: dt.datetime, end_date: dt.datetime, directions_src: str, logname: str = None) -> None:
+    def __init__(self, tickers: List[str], start_date: dt.datetime, end_date: dt.datetime, directions_src: str) -> None:
         super(DailyTradingEnv, self).__init__()
         self.tickers = tickers
         self.start = start_date
@@ -32,7 +25,7 @@ class DailyTradingEnv(gym.Env):
         self.action_space = spaces.MultiBinary(len(tickers) + 1)
         self.observation_space = spaces.Box(low=0, high=1, shape=(len(tickers),))
 
-        for ticker in tqdm(tickers):
+        for ticker in tickers:
             day_data_df = pd.read_csv(f'../data/day_data/{ticker} MK Equity.csv', parse_dates=True, index_col="Dates").loc[start_date:end_date]
             self.last_prices.append(day_data_df["PX_LAST"].to_numpy())
             
@@ -45,9 +38,6 @@ class DailyTradingEnv(gym.Env):
             for k, v in dividend_df['Dividends'].iteritems():
                 s[k] = v
             self.dividends.append(s.to_numpy())
-            
-            assert (day_data_df.index[1:] == directions_df.index).all()
-            assert (day_data_df.index == s.index).all()
         
         self.last_prices = np.array(self.last_prices).T
         self.directions = np.array(self.directions).T
@@ -58,8 +48,6 @@ class DailyTradingEnv(gym.Env):
         self.curr_index = 0
         self.current_balance = 100000
         self.last_reward = 0
-        
-        self.tf_logger = TensorBoardLogger('../tensorboard_logs', logname) if logname is not None else None
         
     def step(self, action: np.ndarray):
         assert len(action) == len(self.tickers) + 1
@@ -81,31 +69,20 @@ class DailyTradingEnv(gym.Env):
         reward = self._calc_reward(profits, div_received)
 
         self.current_balance += profits + div_received
+        self.balance_record.append(self.current_balance)
         self.curr_index += 1
 
         self.last_reward = reward
     
         obs, rew, done, info = self._get_obs(), reward, self.curr_index == self.period_length, {}
-       
-        self.current_log['actions'].append(action)
-        self.current_log['rewards'].append(rew)
-        self.current_log['bankroll'].append(self.current_balance)
-        if done:
-            for k in self.logs.keys():
-                self.logs[k].append(np.array(self.current_log[k]))
-            if self.tf_logger is not None:
-                self.tf_logger.log('custom/reward', np.mean(self.logs['rewards'][-1]))
-                br_series = self.get_series('bankroll', -1)
-                self.tf_logger.log('custom/CAGR', qs.stats.cagr(br_series))
-                self.tf_logger.log('custom/sharpe', qs.stats.sharpe(br_series))
+
         return obs, rew, done, info
 
     def reset(self):
         self.curr_index = 0
         self.current_balance = 100000
         self.last_reward = 0
-        self.current_log = {'actions': [], 'rewards': [], 'bankroll': []}
-        self.current_log['bankroll'].append(self.current_balance)
+        self.balance_record = [self.current_balance]
         return self._get_obs()
 
     def render(self, mode="human"):
@@ -119,57 +96,3 @@ class DailyTradingEnv(gym.Env):
 
     def _get_obs(self):
         return self.directions[self.curr_index]
-    
-    def clear_logs(self):
-        self.logs = {'actions': [], 'rewards': [], 'bankroll': []}
-        self.current_log = {'actions': [], 'rewards': [], 'bankroll': []}
-        
-    def save_logs(self, path):
-        save_dict = {}
-        save_dict['dates'] = self.dates
-        save_dict['packedactions'] = np.packbits(np.array(self.logs['actions'], dtype=bool), axis=1)
-        save_dict['rewards'] = np.array(self.logs['rewards'])
-        save_dict['bankroll'] = np.array(self.logs['bankroll'])
-        np.savez(path, **save_dict)
-    
-    def load_logs(self, path):
-        load_dict = np.load(path)
-        self.dates = load_dict['dates']
-        self.logs['actions'] = list(np.unpackbits(load_dict['packedactions'], axis=1)[:,:len(self.dates),:])
-        self.logs['rewards'] = list(load_dict['rewards'])
-        self.logs['bankroll'] = list(load_dict['bankroll'])
-    
-    def get_logs_len(self):
-        return len(self.logs['bankroll'])
-    
-    def get_series(self, name, i):
-        return pd.Series(self.logs[name][i], index=self.dates[len(self.dates)-len(self.logs[name][i]):])
-            
-    def plot_change(self, metric, ax=None, xlabel='episodes'):
-        settitle = plt.title if ax is None else ax.set_title
-        setxlabel = plt.xlabel if ax is None else ax.set_xlabel
-        drawplot = plt.plot if ax is None else ax.plot
-        
-        #settitle(metric if metric == 'rewards' else metric.__name__)
-        #setxlabel(xlabel)
-        drawplot(np.mean(self.logs['rewards'], axis=1) if metric == 'rewards' else [metric(self.get_series('bankroll',i)) for i in range(self.get_logs_len())])
-    
-    def report(self, report='basic', i=-1, **kwargs):
-        eval(f'qs.reports.{report}')(self.get_series('bankroll',i), **kwargs)
-
-        
-
-        
-class TensorBoardLogger:
-    
-    def __init__(self, dir, name):
-        self.writer = SummaryWriter(os.path.join(dir, name))
-        self.step = 0
-    
-    def inc_step(self):
-        self.step += 1
-    
-    def log(self, key, value):
-        self.writer.add_scalar(key, value, self.step)
-    
-    
