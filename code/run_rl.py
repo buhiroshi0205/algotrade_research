@@ -1,6 +1,7 @@
 import datetime as dt
 import multiprocessing as mp
 import random
+import pprint
 
 from stable_baselines3 import A2C, DQN, PPO
 import quantstats as qs
@@ -23,7 +24,7 @@ def evaluate(model, env, metric='sharpe'):
     return qs.stats.sharpe(pd.Series(env.balance_record))
 
 
-def run(new_hparams={}, trials=1, seed=None, name=None):
+def run(new_hparams={}, n_trials=1, seed=None, name=None):
     # default_params
     hparams = {
         'stocks': all_stocks[:5],
@@ -54,7 +55,7 @@ def run(new_hparams={}, trials=1, seed=None, name=None):
     seeds = []
     processes = []
     pipes = []
-    for i in range(trials):
+    for i in range(n_trials):
         newseed = random.randrange(2**31) if seed is None else seed
         seeds.append(newseed)
         
@@ -65,25 +66,47 @@ def run(new_hparams={}, trials=1, seed=None, name=None):
         processes.append(p)
         p.start()
 
+    datawriter = SummaryWriter(f'../tensorboard_logs/{name}')
+    datawriter.add_text('all_hparams', pprint.pformat(hparams), global_step=0)
+    datawriter.add_text('seeds', str(seeds), global_step=0)
+
+    train_curve = []
+    eval_curve = []
     total_ts = hparams['total_ts']
     eval_ts = hparams['eval_ts']
     curr_ts = 0
-
     with tqdm(total=total_ts, desc=name) as pbar:
         while curr_ts < total_ts:
+
             train_avg = 0
             eval_avg = 0
-            for i in range(trials):
+            for i in range(n_trials):
                 a, b = pipes[i].recv()
                 train_avg += a
                 eval_avg += b
-            train_avg /= trials
-            eval_avg /= trials
-            print(train_avg, eval_avg)
-            pbar.update(eval_ts)
-            curr_ts += eval_ts
+            train_avg /= n_trials
+            eval_avg /= n_trials
+            train_curve.append(train_avg)
+            eval_curve.append(eval_avg)
 
-        
+            curr_ts += eval_ts
+            datawriter.add_scalar('sharpe/train', train_avg, global_step=curr_ts)
+            datawriter.add_scalar('sharpe/eval', eval_avg, global_step=curr_ts)
+            pbar.update(eval_ts)
+
+    datawriter.close()
+    for p in processes:
+        p.join()
+
+    hparams['stocks'] = len(hparams['stocks'])
+    hparams['n_trials'] = n_trials
+    metrics = {'metrics/max_eval_sharpe': max(eval_curve)}
+    hparamwriter = SummaryWriter('../tensorboard_logs')
+    hparamwriter.add_hparams(hparams, metrics, run_name=name)
+    hparamwriter.close()
+
+    return metrics['metrics/max_eval_sharpe']
+
 
 def worker(hparams, seed, pipe):
     train_env = DailyTradingEnv(hparams['stocks'],
@@ -121,9 +144,10 @@ def worker(hparams, seed, pipe):
 
 
 if __name__ == '__main__':
-    params = {
-        'total_ts': 10000,
-        'eval_ts': 2000,
-        'width': 4
-    }
-    run(params, trials=3)
+    for width in [4,8,16,32,64]:
+        for depth in [1,2,3]:
+            params = {
+                'depth': depth,
+                'width': width
+            }
+            run(params, n_trials=10)
