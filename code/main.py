@@ -25,26 +25,42 @@ def run(stocks, idx):
 
     for stock in stocks:
         df = pd.read_csv(f'../data/Day Data with Volatility/{stock} MK Equity.csv')
-        train_ds, val_ds, test_ds = dataset.get_daily_dataset(df, 30, dt.datetime(2018, 1, 1), dt.datetime(2020, 1, 1))
+        train_ds, val_ds, test_ds = dataset.get_daily_dataset(df, 30, dt.datetime(2018, 1, 1), dt.datetime(2020, 1, 1), predict_range=3)
         for i in range(ensemble_num):
             pbar.set_description(f'{stock}-{i}/{ensemble_num}')
 
             train_config = {
-              'model_name': 'deeper',
-              'model_params': {'dim_0': len(dataset.FEATURES)},
-              'optimizer_name': 'Adam',
-              'optimizer_params': {'weight_decay': 0.0001},
-              'epochs': 5,
-              'device_name': f'cuda:{idx}'
+                'model_name': 'deeper',
+                'model_params': {'dim_0': len(dataset.FEATURES)},
+                'optimizer_name': 'Adam',
+                'optimizer_params': {'weight_decay': 0.0001},
+                'epochs': 5,
+                'device_name': f'cuda:{idx}'
+            }
+
+            train_config = {
+                'model_name': 'attention',
+                'model_params': {
+                    'input_dim': len(dataset.FEATURES),
+                    'encoder_hidden_dim': 128,
+                    'decoder_hidden_dim':256,
+                    'key_value_size': 128
+                },
+                'optimizer_name': 'Adam',
+                'optimizer_params': {'weight_decay': 0.0001},
+                'lr': 0.001,
+                'epochs': 5,
+                'device_name': f'cuda:{idx}'
             }
 
             model = train_models.train_with_config(train_ds, val_ds, verbose=verbose, **train_config)
-            torch.save(model.state_dict(), f'../models/{experiment_name}/{stock}_model{i}.pt')
+            torch.save(model.state_dict(), f'../model_checkpoints/{experiment_name}/{stock}_model{i}.pt')
             pbar.update()
     pbar.close()
 
 
 if __name__ == '__main__':
+    mp.set_start_method('spawn')
     os.makedirs(f'../model_checkpoints/{experiment_name}', exist_ok=True)
     if processes == 1:
         run(symbols, 0)

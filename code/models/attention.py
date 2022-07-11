@@ -24,7 +24,7 @@ class pBLSTM(nn.Module):
         x_unpacked, x_lens = pad_packed_sequence(x, batch_first=True)
         # x_unpacked: shape[B, T, dim]
         # Truncate the input length dimension by concatenating feature dimension
-        x_lens = x_lens.cuda()
+        # x_lens = x_lens.cuda()
         # chop off last element if input is odd
         chopped_length = torch.div(x_unpacked.shape[1],2, rounding_mode='floor')*2
         x_unpacked = x_unpacked[:,:chopped_length,:]
@@ -255,7 +255,7 @@ class Decoder(nn.Module):
         predictions = []
         # This is the first input to the decoder
         # What should the fill_value be?
-        prediction = torch.full((B,1), fill_value= 0, device=device)
+        prediction = torch.full((B,1), fill_value= 0, device=key.device)
         # The length of hidden_states vector should depend on the number of LSTM Cells defined in init
         # The paper uses 2
         hidden_states = [None, None] 
@@ -270,8 +270,8 @@ class Decoder(nn.Module):
                 using_teacher_forcing = np.random.random() < teacher_forcing_rate
                 if using_teacher_forcing:
                     if i == 0:
-                        start = torch.zeros((B,1),dtype=torch.long).fill_(y[0][0])
-                        step = torch.LongTensor(start).cuda() #move to gpu
+                        start = torch.zeros((B,1)).fill_(y[0][0])
+                        step = start.to(key.device) #move to gpu
                     else:
                         # Otherwise, feed the label of the **previous** time step
                         step = y[:, i-1].reshape((B,1))
@@ -280,8 +280,8 @@ class Decoder(nn.Module):
                     if i == 0:
                         # This is the first time step
                         # Hint: How did you initialize "prediction" variable above?--> fill with index of sos(start) for all batches
-                        start = torch.zeros((B,1), dtype=torch.long).fill_(0)
-                        step = torch.LongTensor(start).cuda() #move to gpu
+                        start = torch.zeros((B,1)).fill_(0)
+                        step = start.to(key.device) #move to gpu
                         
                     else:
                         previous_pred = prediction
@@ -290,8 +290,8 @@ class Decoder(nn.Module):
             else:
                 # if the start
                 if i == 0:
-                    start = torch.zeros((B,1),dtype=torch.long).fill_(0)
-                    step = torch.LongTensor(start).cuda() #move to gpu 
+                    start = torch.zeros((B,1)).fill_(0)
+                    step = start.to(key.device) #move to gpu 
 
                 else:
                     previous_pred = prediction

@@ -3,7 +3,7 @@ from . import default, deeper, attention
 name_mapping = {
     'default': default,
     'deeper': deeper,
-    'new_attention': attention
+    'attention': attention
 }
 
 def get_model(name, *args, **kwargs):
