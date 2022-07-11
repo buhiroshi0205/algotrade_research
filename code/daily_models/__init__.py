@@ -1,8 +1,9 @@
-from . import default, deeper
+from . import default, deeper, new_attention
 
 name_mapping = {
     'default': default,
-    'deeper': deeper
+    'deeper': deeper,
+    'new_attention': new_attention
 }
 
 def get_model(name, *args, **kwargs):
