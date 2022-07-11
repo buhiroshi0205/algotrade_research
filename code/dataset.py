@@ -22,7 +22,7 @@ RSI_RANGE_START = 22
 RSI_RANGE_END = 26
 
 class DailyDataset(Dataset):
-    def __init__(self, df: pd.DataFrame, look_backward: int, dividend_df=None) -> None:
+    def __init__(self, df: pd.DataFrame, look_backward: int, predict_range=1, dividend_df=None) -> None:
         self.df = df.dropna()
 
         # Dates preprocessing
@@ -42,6 +42,7 @@ class DailyDataset(Dataset):
                 self.df["PX_LAST_ADJUSTED"] = self.df.apply(lambda x: x.PX_LAST_ADJUSTED - amount if x.Dates < date else x.PX_LAST_ADJUSTED, axis=1)
 
         self.look_backward = look_backward
+        self.predict_range = predict_range
         self.use_index = self.df.index[look_backward:]
 
         self.tensorx = torch.tensor(self.df[FEATURES].values, dtype=torch.float)
@@ -52,11 +53,12 @@ class DailyDataset(Dataset):
         return len(self.use_index)
 
     def __getitem__(self, index: int, return_scale: bool=False) -> Tuple[Tensor, Tensor, Tensor]:
-        i = self.use_index[index]
-        #x = torch.tensor(self.df.loc[(i - self.look_backward):(i-1)][FEATURES].values, dtype=torch.float)
-        #y = torch.tensor(self.df.loc[i][LABEL], dtype=torch.float)
-        x = self.tensorx[index:index+self.look_backward]
-        y = self.tensory[index+self.look_backward]
+        now = index + self.look_backward
+        x = self.tensorx[now-self.look_backward:now]
+        if self.predict_range == 1:
+            y = self.tensory[now]
+        else:
+            y = self.tensory[now-self.predict_range+1:now+1]
 
         # Standardization
         x_std, x_mean = torch.std_mean(x[:, :RSI_RANGE_START], dim=0, unbiased=True)
@@ -69,7 +71,6 @@ class DailyDataset(Dataset):
         if RSI_RANGE_END > RSI_RANGE_START:
             x[:, RSI_RANGE_START:RSI_RANGE_END] /= 100
 
-        #move = torch.tensor(self.df.loc[i]["PX_LAST_ADJUSTED"] / self.df.loc[i-1]["PX_LAST_ADJUSTED"] - 1)
         move = self.adjusted[index+self.look_backward] / self.adjusted[index+self.look_backward-1] - 1
 
         if return_scale:
@@ -77,7 +78,7 @@ class DailyDataset(Dataset):
         return x, y, move
 
 def get_daily_dataset(df: pd.DataFrame, look_backward: int, val_start: dt.datetime,
-                      test_start: dt.datetime, div_df=None) -> Tuple[DailyDataset, DailyDataset, DailyDataset]:
+                      test_start: dt.datetime, predict_range=1, div_df=None) -> Tuple[DailyDataset, DailyDataset, DailyDataset]:
     all_dates = pd.to_datetime(df["Dates"])
 
     first_val = df.index[all_dates >= val_start][0]
@@ -85,4 +86,4 @@ def get_daily_dataset(df: pd.DataFrame, look_backward: int, val_start: dt.dateti
     train_df = df.loc[:first_val]
     val_df = df.loc[first_val - look_backward + 1: first_test]
     test_df = df.loc[first_test - look_backward + 1:]
-    return DailyDataset(train_df, look_backward, div_df), DailyDataset(val_df, look_backward, div_df), DailyDataset(test_df, look_backward, div_df)
+    return DailyDataset(train_df, look_backward, predict_range, div_df), DailyDataset(val_df, look_backward, predict_range, div_df), DailyDataset(test_df, look_backward, predict_range, div_df)
