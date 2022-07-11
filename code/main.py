@@ -45,7 +45,7 @@ def run(stocks, idx):
 
 
 if __name__ == '__main__':
-    os.makedirs(f'../models/{experiment_name}', exist_ok=True)
+    os.makedirs(f'../model_checkpoints/{experiment_name}', exist_ok=True)
     if processes == 1:
         run(symbols, 0)
     else:

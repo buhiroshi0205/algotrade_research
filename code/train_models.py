@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import daily_models
+import models
 
 
 def train_loop(train_loader,
@@ -73,8 +73,8 @@ def train_with_config(train_ds, val_ds,
     train_loader = DataLoader(train_ds, shuffle=True, batch_size=batch_size)
     val_loader = DataLoader(val_ds, shuffle=False, batch_size=batch_size)
     
-    model = daily_models.get_model(model_name, **model_params)
-    loss_function = daily_models.get_loss_fn(model_name)
+    model = models.get_model(model_name, **model_params)
+    loss_function = models.get_loss_fn(model_name)
     
     optimizer_name_map = {
         'adam': torch.optim.Adam,
