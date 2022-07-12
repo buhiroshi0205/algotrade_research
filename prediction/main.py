@@ -54,14 +54,14 @@ def run(stocks, idx):
             }
 
             model = train_models.train_with_config(train_ds, val_ds, verbose=verbose, **train_config)
-            torch.save(model.state_dict(), f'../model_checkpoints/{experiment_name}/{stock}_model{i}.pt')
+            torch.save(model.state_dict(), f'../checkpoints/{experiment_name}/{stock}_model{i}.pt')
             pbar.update()
     pbar.close()
 
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
-    os.makedirs(f'../model_checkpoints/{experiment_name}', exist_ok=True)
+    os.makedirs(f'../checkpoints/{experiment_name}', exist_ok=True)
     if processes == 1:
         run(symbols, 0)
     else:
