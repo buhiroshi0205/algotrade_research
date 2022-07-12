@@ -24,24 +24,7 @@ def evaluate(model, env, metric='sharpe'):
     return qs.stats.sharpe(pd.Series(env.balance_record))
 
 
-def mp_run(args):
-    kwargs, arr, lock = args
-    print('mp args received')
-    process_idx = 0
-    with lock:
-        while arr[process_idx] != 0:
-            process_idx += 1
-        arr[process_idx] = 1
-    print(f'starting to run process {process_idx}')
-    kwargs['process_idx'] = process_idx
-    run(**kwargs)
-
-    with lock:
-        arr[process_idx] = 0
-    print('process completed')
-
-
-def run(new_hparams={}, n_trials=10, seed=None, name=None, process_idx=0):
+def run(new_hparams={}, n_trials=1, seed=None, name=None):
     # default_params
     hparams = {
         'stocks': all_stocks[:5],
@@ -92,7 +75,7 @@ def run(new_hparams={}, n_trials=10, seed=None, name=None, process_idx=0):
     total_ts = hparams['total_ts']
     eval_ts = hparams['eval_ts']
     curr_ts = 0
-    with tqdm(total=total_ts, desc=name, position=process_idx) as pbar:
+    with tqdm(total=total_ts, desc=name) as pbar:
         while curr_ts < total_ts:
 
             train_avg = 0
@@ -161,23 +144,8 @@ def worker(hparams, seed, pipe):
 
 
 if __name__ == '__main__':
-    simultaneous_runs = 2
-    process_idxs_pool = mp.Array('i', simultaneous_runs)
-    for i in range(simultaneous_runs):
-        process_idxs_pool[i] = 0
-    lock = mp.Lock()
-
-    params_search_list = []
-    for depth in [1,2,3,4,5]:
-        for width in [4,8,16,32,64]:
-            params = {
-                'depth': depth,
-                'width': width
-            }
-            params_search_list.append(({'new_hparams': params}, process_idxs_pool, lock))
-
-    print('start processing using pool')
-    with mp.Pool(processes=simultaneous_runs) as p:
-        #tqdm(p.imap_unordered(mp_run, params_search_list), position=simultaneous_runs)
-        for x in tqdm(p.imap_unordered(mp_run, params_search_list)):
-            pass
+    params = {
+        'depth': 1,
+        'width': 8
+    }
+    run(params, n_trials=10)
