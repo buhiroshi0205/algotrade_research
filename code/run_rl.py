@@ -62,7 +62,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None):
         parent, child = mp.Pipe()
         pipes.append(parent)
         
-        p = mp.Process(target=worker, args=(hparams, seed, child))
+        p = mp.Process(target=worker, args=(hparams, newseed, child))
         processes.append(p)
         p.start()
 
@@ -144,10 +144,8 @@ def worker(hparams, seed, pipe):
 
 
 if __name__ == '__main__':
-    for width in [4,8,16,32,64]:
-        for depth in [1,2,3]:
-            params = {
-                'depth': depth,
-                'width': width
-            }
-            run(params, n_trials=10)
+    params = {
+        'depth': 1,
+        'width': 8
+    }
+    run(params, n_trials=10)
