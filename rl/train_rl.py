@@ -24,7 +24,7 @@ def evaluate(model, env, metric='sharpe'):
     return qs.stats.sharpe(pd.Series(env.balance_record))
 
 
-def run(new_hparams={}, n_trials=1, seed=None, name=None):
+def run(new_hparams={}, n_trials=1, seed=None, name=None, process_idx=0, process_queue=None):
     # default_params
     hparams = {
         'stocks': all_stocks[:5],
@@ -37,7 +37,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None):
         'eval_end': 2020,
         'eval_directions': 'olivier',
 
-        'total_ts': int(1e6),
+        'total_ts': int(2e6),
         'eval_ts': int(1e4),
 
         'gamma': 0,
@@ -75,7 +75,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None):
     total_ts = hparams['total_ts']
     eval_ts = hparams['eval_ts']
     curr_ts = 0
-    with tqdm(total=total_ts, desc=name) as pbar:
+    with tqdm(total=total_ts, desc=name, position=process_idx) as pbar:
         while curr_ts < total_ts:
 
             train_avg = 0
@@ -105,6 +105,8 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None):
     hparamwriter.add_hparams(hparams, metrics, run_name=name)
     hparamwriter.close()
 
+    if process_queue is not None:
+        process_queue.put(process_idx)
     return metrics['metrics/max_eval_sharpe']
 
 
@@ -144,8 +146,21 @@ def worker(hparams, seed, pipe):
 
 
 if __name__ == '__main__':
-    params = {
-        'depth': 1,
-        'width': 8
-    }
-    run(params, n_trials=10)
+    simultaneous_runs = 5
+
+    params_search_list = []
+    for depth in [1]:
+        for width in list(range(4,17)):
+            params = {
+                'depth': depth,
+                'width': width,
+                'total_ts': int(1e5)
+            }
+            params_search_list.append(params)
+
+    q = mp.Queue()
+    for i in range(simultaneous_runs):
+        q.put(i)
+    for p in tqdm(params_search_list, position=simultaneous_runs, leave=False):
+        free_process_idx = q.get()
+        mp.Process(target=run, kwargs={'new_hparams': p, 'n_trials': 10, 'process_idx': free_process_idx, 'process_queue': q}).start()
