@@ -2,10 +2,12 @@ import datetime as dt
 import multiprocessing as mp
 import random
 import pprint
+import math
 
 from stable_baselines3 import A2C, DQN, PPO
 import quantstats as qs
 import pandas as pd
+import numpy as np
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
@@ -37,11 +39,12 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, process_idx=0, process
         'eval_end': 2020,
         'eval_directions': 'olivier',
 
-        'total_ts': int(2e6),
+        'total_ts': int(1e6),
         'eval_ts': int(1e4),
 
         'gamma': 0,
         'lr': 0.0007,
+        'ent_coef': 0.0,
         'depth': 2,
         'width': 64,
     }
@@ -50,7 +53,8 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, process_idx=0, process
     if name is None:
         name = f'{len(hparams["stocks"])}stock'
         for k, v in new_hparams.items():
-            name += f',{k}={v}'
+            if k != 'stocks':
+                name += f',{k}={v}'
     
     seeds = []
     processes = []
@@ -80,12 +84,15 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, process_idx=0, process
 
             train_avg = 0
             eval_avg = 0
+            valid_results = 0
             for i in range(n_trials):
                 a, b = pipes[i].recv()
-                train_avg += a
-                eval_avg += b
-            train_avg /= n_trials
-            eval_avg /= n_trials
+                if math.isfinite(a) and math.isfinite(b):
+                    train_avg += a
+                    eval_avg += b
+                    valid_results += 1
+            train_avg /= valid_results
+            eval_avg /= valid_results
             train_curve.append(train_avg)
             eval_curve.append(eval_avg)
 
@@ -127,6 +134,7 @@ def worker(hparams, seed, pipe):
 
     model = A2C('MlpPolicy', train_env, device='cpu',
                 learning_rate=hparams['lr'],
+                ent_coef=hparams['ent_coef'],
                 gamma=hparams['gamma'],
                 policy_kwargs={'net_arch': [dict(pi=[w]*d, vf=[w]*d)]},
                 seed=seed)
@@ -145,18 +153,21 @@ def worker(hparams, seed, pipe):
         curr_ts += eval_ts
 
 
-if __name__ == '__main__':
+def run_mp():
     simultaneous_runs = 5
 
     params_search_list = []
-    for depth in [1]:
-        for width in list(range(4,17)):
-            params = {
-                'depth': depth,
-                'width': width,
-                'total_ts': int(1e5)
-            }
-            params_search_list.append(params)
+    for ent_coef in np.concatenate((np.linspace(0.0001,0.001,10),np.linspace(0.002,0.005,4))):
+        params = {
+            'ent_coef': ent_coef
+        }
+        params_search_list.append(params)
+    for lr in [1e-5,3e-5,7e-5,1e-4,3e-4,7e-4,1e-3,3e-3,7e-3,1e-2]:
+        params = {
+            'lr': lr
+        }
+        params_search_list.append(params)
+    print(params_search_list)
 
     q = mp.Queue()
     for i in range(simultaneous_runs):
@@ -164,3 +175,16 @@ if __name__ == '__main__':
     for p in tqdm(params_search_list, position=simultaneous_runs, leave=False):
         free_process_idx = q.get()
         mp.Process(target=run, kwargs={'new_hparams': p, 'n_trials': 10, 'process_idx': free_process_idx, 'process_queue': q}).start()
+
+def run_once():
+    params = {
+        'stocks': all_stocks,
+        'total_ts': int(1e7),
+        'eval_ts': int(5e4)
+    }
+    run(params, n_trials=10)
+
+
+if __name__ == '__main__':
+    #run_once()
+    run_mp()
