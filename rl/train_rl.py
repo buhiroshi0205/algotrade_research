@@ -26,7 +26,7 @@ def evaluate(model, env, metric='sharpe'):
     return qs.stats.sharpe(pd.Series(env.balance_record))
 
 
-def run(new_hparams={}, n_trials=1, seed=None, name=None, process_idx=0, process_queue=None):
+def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, process_idx=0, process_queue=None):
     # default_params
     hparams = {
         'stocks': all_stocks[:5],
@@ -70,7 +70,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, process_idx=0, process
         processes.append(p)
         p.start()
 
-    datawriter = SummaryWriter(f'../tensorboard_logs/{name}')
+    datawriter = SummaryWriter(f'../tensorboard_logs/{name}' if experiment is None else f'../tensorboard_logs/{experiment}/{name}')
     datawriter.add_text('all_hparams', pprint.pformat(hparams), global_step=0)
     datawriter.add_text('seeds', str(seeds), global_step=0)
 
@@ -108,7 +108,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, process_idx=0, process
     hparams['stocks'] = len(hparams['stocks'])
     hparams['n_trials'] = n_trials
     metrics = {'metrics/max_eval_sharpe': max(eval_curve)}
-    hparamwriter = SummaryWriter('../tensorboard_logs')
+    hparamwriter = SummaryWriter('../tensorboard_logs' if experiment is None else f'../tensorboard_logs/{experiment}')
     hparamwriter.add_hparams(hparams, metrics, run_name=name)
     hparamwriter.close()
 
@@ -153,7 +153,7 @@ def worker(hparams, seed, pipe):
         curr_ts += eval_ts
 
 
-def run_mp():
+def run_mp(experiment=None):
     simultaneous_runs = 5
 
     params_search_list = []
@@ -174,15 +174,21 @@ def run_mp():
         q.put(i)
     for p in tqdm(params_search_list, position=simultaneous_runs, leave=False):
         free_process_idx = q.get()
-        mp.Process(target=run, kwargs={'new_hparams': p, 'n_trials': 10, 'process_idx': free_process_idx, 'process_queue': q}).start()
+        mp.Process(target=run, kwargs={
+            'new_hparams': p,
+            'n_trials': 10,
+            'experiment': experiment,
+            'process_idx': free_process_idx,
+            'process_queue': q
+        }).start()
 
-def run_once():
+def run_once(experiment=None):
     params = {
         'stocks': all_stocks,
         'total_ts': int(1e7),
         'eval_ts': int(5e4)
     }
-    run(params, n_trials=10)
+    run(params, n_trials=10, experiment=None)
 
 
 if __name__ == '__main__':
