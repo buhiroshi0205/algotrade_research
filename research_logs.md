@@ -24,3 +24,19 @@
 
 ### July 14
 - Meeting: continue with gridsearch on lr x ent_coef, hparam tuning with 20stocks, and then PPO/other algos
+- report more statistics than sharpe ratio on spreadsheet
+
+### July 16
+- started running lr x ent_coef gridsearch zoomed near individually best regions so far
+- [ ] TODO: keep a separate tensorboard folder of all the BEST runs so far corresponding to the spreadsheet
+
+### July 17
+- lr x ent_coef result: original individually tuned params were good: lr=0.0013, ent_coef=0.00031
+- started running 20stocks
+
+### July 18
+- 20 stock NN architecture search: depth must be shallow. depth3 did worst, 1 was best. Best was 1x32. Peaks happened around 1~2M and started overfitting except 1x64, which peaked 3M and stable after 5M
+- Train curve smooth with more capacity = more accuracy when depth=1. depth=3 still bad
+- 20 stock lr x ent_coef search seems too noisy, so skeptical about results
+- if results are to be believed: lr about 0.007 or <= 0.007 (<0.008 to be precise), and ent_coef <= 0.0003 (huge range for both)
+- [ ] TODO: categorize tensorboard folders into experiment names for storage
