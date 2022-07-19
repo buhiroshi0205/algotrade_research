@@ -54,11 +54,11 @@ class DailyDataset(Dataset):
 
     def __getitem__(self, index: int, return_scale: bool=False) -> Tuple[Tensor, Tensor, Tensor]:
         now = index + self.look_backward
-        x = self.tensorx[now-self.look_backward:now]
+        x = self.tensorx[now-self.look_backward:now].clone()
         if self.predict_range == 1:
-            y = self.tensory[now]
+            y = self.tensory[now].clone()
         else:
-            y = self.tensory[now-self.predict_range+1:now+1]
+            y = self.tensory[now-self.predict_range+1:now+1].clone()
 
         # Standardization
         x_std, x_mean = torch.std_mean(x[:, :RSI_RANGE_START], dim=0, unbiased=True)
