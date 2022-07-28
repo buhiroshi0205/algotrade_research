@@ -28,7 +28,7 @@ def train_loop(train_loader,
 
             optimizer.zero_grad()
             
-            y_pred = model(X,y)
+            y_pred = model(X, y=y, Gumbel_noise=False, mode='train').squeeze()
             single_loss = loss_function(y_pred, y)
             if not torch.isnan(single_loss) and not torch.isinf(single_loss):
                 single_loss.backward()
@@ -47,7 +47,7 @@ def train_loop(train_loader,
             for X, y, _ in tqdm(val_loader, desc="Evaluating", leave=False) if verbose else val_loader:
                 X = X.to(device)
                 y = y.to(device)
-                y_pred = model(X,y)
+                y_pred = model(X, y=y, Gumbel_noise=False, mode='val').squeeze()
                 single_loss = loss_function(y_pred, y)
                 running_val_loss += single_loss
                 val_count += 1
