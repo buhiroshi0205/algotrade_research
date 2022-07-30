@@ -4,12 +4,16 @@ import random
 import pprint
 import math
 
-from stable_baselines3 import A2C, DQN, PPO
+from stable_baselines3 import A2C, PPO
 import quantstats as qs
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+
+from ray import tune
+from ray.tune.suggest import ConcurrencyLimiter
+from ray.tune.suggest.dragonfly import DragonflySearch
 
 from dailyenv import DailyTradingEnv
 
@@ -26,10 +30,10 @@ def evaluate(model, env, metric='sharpe'):
     return qs.stats.sharpe(pd.Series(env.balance_record))
 
 
-def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, process_idx=0, process_queue=None):
+def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, process_idx=0, process_queue=None, automl=False):
     # default_params
     hparams = {
-        'stocks': all_stocks[:5],
+        'stocks': all_stocks,
 
         'train_start': 2010,
         'train_end': 2018,
@@ -43,8 +47,9 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
         'eval_ts': int(1e4),
 
         'gamma': 0,
+        'n_steps': 5,
         'lr': 0.0007,
-        'ent_coef': 0.0,
+        'ent_coef': 0.0003,
         'depth': 2,
         'width': 64,
     }
@@ -53,7 +58,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
     if name is None:
         name = f'{len(hparams["stocks"])}stock'
         for k, v in new_hparams.items():
-            if k != 'stocks':
+            if k not in ['stocks','total_ts','eval_ts']:
                 name += f',{k}={v}'
     
     seeds = []
@@ -91,6 +96,8 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
                     train_avg += a
                     eval_avg += b
                     valid_results += 1
+                else:
+                    print(f'NaN/inf error at name={name} seed={seeds[i]} steps={curr_ts}')
             train_avg /= valid_results
             eval_avg /= valid_results
             train_curve.append(train_avg)
@@ -99,6 +106,8 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
             curr_ts += eval_ts
             datawriter.add_scalar('sharpe/train', train_avg, global_step=curr_ts)
             datawriter.add_scalar('sharpe/eval', eval_avg, global_step=curr_ts)
+            if automl:
+                tune.report(max_eval_sharpe=max(eval_curve))
             pbar.update(eval_ts)
 
     datawriter.close()
@@ -136,6 +145,7 @@ def worker(hparams, seed, pipe):
                 learning_rate=hparams['lr'],
                 ent_coef=hparams['ent_coef'],
                 gamma=hparams['gamma'],
+                n_steps=hparams['n_steps'],
                 policy_kwargs={'net_arch': [dict(pi=[w]*d, vf=[w]*d)]},
                 seed=seed)
 
@@ -153,20 +163,20 @@ def worker(hparams, seed, pipe):
         curr_ts += eval_ts
 
 
-def run_mp(experiment=None):
-    simultaneous_runs = 5
+def run_mp(experiment):
+    simultaneous_runs = 2
 
     params_search_list = []
-    for ent_coef in np.concatenate((np.linspace(0.0001,0.001,10),np.linspace(0.002,0.005,4))):
-        params = {
-            'ent_coef': ent_coef
-        }
-        params_search_list.append(params)
-    for lr in [1e-5,3e-5,7e-5,1e-4,3e-4,7e-4,1e-3,3e-3,7e-3,1e-2]:
-        params = {
-            'lr': lr
-        }
-        params_search_list.append(params)
+    for depth in [2]:
+        for width in [32,64]:
+            params = {
+                'depth': depth,
+                'width': width,
+                'n_steps': 20,
+                'total_ts': int(2e7),
+                'eval_ts': int(5e4),
+            }
+            params_search_list.append(params)
     print(params_search_list)
 
     q = mp.Queue()
@@ -176,21 +186,83 @@ def run_mp(experiment=None):
         free_process_idx = q.get()
         mp.Process(target=run, kwargs={
             'new_hparams': p,
-            'n_trials': 10,
+            'n_trials': 30,
             'experiment': experiment,
             'process_idx': free_process_idx,
             'process_queue': q
         }).start()
+    
 
-def run_once(experiment=None):
+def run_once(experiment):
     params = {
         'stocks': all_stocks,
+        'train_directions': 'bestattention_2010split',
+        'eval_directions': 'bestattention_2018split',
+        
         'total_ts': int(1e7),
-        'eval_ts': int(5e4)
+        'eval_ts': int(5e4),
+
+        'n_steps': 20,
+        'depth': 1,
+        'width': 32
     }
-    run(params, n_trials=10, experiment=None)
+    run(params, n_trials=20, experiment=experiment)
+
+
+def objective(config):
+    params = {
+        'stocks': all_stocks[:5],
+        'total_ts': int(1e4),
+        'eval_ts': int(1e4),
+    }
+    for k, v in config.items():
+        params[k] = v
+    run(params, n_trials=20, experiment='automl_test', automl=True)
+
+def run_automl(experiment):
+    search_space = [{
+        'name': 'lr',
+        'type': 'float',
+        'min': 1e-5,
+        'max': 1e-2
+    }, {
+        'name': 'ent_coef',
+        'type': 'float',
+        'min': 1e-5,
+        'max': 1e-2
+    }, {
+        'name': 'depth',
+        'type': 'int',
+        'min': 1,
+        'max': 3,
+        'dim': 1
+    }, {
+        'name': 'width',
+        'type': 'int',
+        'min': 1,
+        'max': 128,
+        'dim': 1
+    }]
+    algo = DragonflySearch(
+        optimizer="bandit",
+        domain="euclidean",
+        metric="max_eval_sharpe",
+        mode="max",
+        space=search_space
+    )
+    algo = ConcurrencyLimiter(algo, max_concurrent=3)
+    analysis = tune.run(
+        objective,
+        name="dragonfly_search",
+        search_alg=algo,
+        num_samples=10
+    )
+    print(analysis.best_config)
+    import pdb
+    pdb.set_trace()
 
 
 if __name__ == '__main__':
-    #run_once()
-    run_mp()
+    run_automl('test_automl')
+    #run_once('best_attention_test')
+    #run_mp('20stock_20M_run')
