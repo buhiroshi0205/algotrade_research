@@ -11,10 +11,6 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-from ray import tune
-from ray.tune.suggest import ConcurrencyLimiter
-from ray.tune.suggest.dragonfly import DragonflySearch
-
 from dailyenv import DailyTradingEnv
 
 
@@ -30,7 +26,7 @@ def evaluate(model, env, metric='sharpe'):
     return qs.stats.sharpe(pd.Series(env.balance_record))
 
 
-def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, process_idx=0, process_queue=None, automl=False):
+def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, process_idx=0, process_queue=None):
     # default_params
     hparams = {
         'stocks': all_stocks,
@@ -106,8 +102,6 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
             curr_ts += eval_ts
             datawriter.add_scalar('sharpe/train', train_avg, global_step=curr_ts)
             datawriter.add_scalar('sharpe/eval', eval_avg, global_step=curr_ts)
-            if automl:
-                tune.report(max_eval_sharpe=max(eval_curve))
             pbar.update(eval_ts)
 
     datawriter.close()
@@ -209,60 +203,7 @@ def run_once(experiment):
     run(params, n_trials=20, experiment=experiment)
 
 
-def objective(config):
-    params = {
-        'stocks': all_stocks[:5],
-        'total_ts': int(1e4),
-        'eval_ts': int(1e4),
-    }
-    for k, v in config.items():
-        params[k] = v
-    run(params, n_trials=20, experiment='automl_test', automl=True)
-
-def run_automl(experiment):
-    search_space = [{
-        'name': 'lr',
-        'type': 'float',
-        'min': 1e-5,
-        'max': 1e-2
-    }, {
-        'name': 'ent_coef',
-        'type': 'float',
-        'min': 1e-5,
-        'max': 1e-2
-    }, {
-        'name': 'depth',
-        'type': 'int',
-        'min': 1,
-        'max': 3,
-        'dim': 1
-    }, {
-        'name': 'width',
-        'type': 'int',
-        'min': 1,
-        'max': 128,
-        'dim': 1
-    }]
-    algo = DragonflySearch(
-        optimizer="bandit",
-        domain="euclidean",
-        metric="max_eval_sharpe",
-        mode="max",
-        space=search_space
-    )
-    algo = ConcurrencyLimiter(algo, max_concurrent=3)
-    analysis = tune.run(
-        objective,
-        name="dragonfly_search",
-        search_alg=algo,
-        num_samples=10
-    )
-    print(analysis.best_config)
-    import pdb
-    pdb.set_trace()
-
-
 if __name__ == '__main__':
-    run_automl('test_automl')
+    pass
     #run_once('best_attention_test')
     #run_mp('20stock_20M_run')
