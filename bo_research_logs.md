@@ -39,4 +39,28 @@
 - Train curve smooth with more capacity = more accuracy when depth=1. depth=3 still bad
 - 20 stock lr x ent_coef search seems too noisy, so skeptical about results
 - if results are to be believed: lr about 0.007 or <= 0.007 (<0.008 to be precise), and ent_coef <= 0.0003 (huge range for both)
-- [ ] TODO: categorize tensorboard folders into experiment names for storage
+- [x] TODO: categorize tensorboard folders into experiment names for storage
+
+### July 22
+- started testing n_steps hyperparameter for some hopes of speedup
+
+### July 23
+- n_steps, as expected, shifted the eval/training curve a little. 20 was a good balance.
+- started running 20M steps experiment using current best two depth, width, ent_coef, and lr (16 options)
+
+### July 25
+- realized that I messed up the previous two experiments, rerunning them
+
+### July 26
+- Organized some results out of a mountain of stuff and sent professor an update report
+
+### July 27
+- updated direction generating code and generated good directions with best_attention model
+
+### July 28
+- using directions from best_attention model to train actually was pretty bad, don't know the reason yet
+  - could it be because the model is only good on the eval set but not on the training set?
+  - could it be too good so the model learned to fit something too specific?
+
+### July 30
+- started running automl with optuna on 5 stocks for testing
