@@ -17,6 +17,7 @@ from dailyenv import DailyTradingEnv
 all_stocks = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "MAY", "MISC", "NESZ", "PBK", "PEP", "PETD", "PTG", "RHBBANK", "ROTH", "T", "TNB"]
 
 
+# given a RL model as strategy, evaluates the sharpe ratio of the strategy on env (usually validation set)
 def evaluate(model, env, metric='sharpe'):
     obs = env.reset()
     done = False
@@ -25,7 +26,23 @@ def evaluate(model, env, metric='sharpe'):
         obs, reward, done, info = env.step(action)
     return qs.stats.sharpe(pd.Series(env.balance_record))
 
+"""
+The function that actually trains the RL model based on input parameters.
+It is a manager process that spawns many worker processes and averages the results.
+Results are logged to tensorboard at the directory ../tensorboard_logs/{experiment}, including training curves, hparams, and seeds.
 
+:param n_trials: the number of processes to to use to run trials. Each process runs one trial and the results are averaged.
+:param seed: the seed to use for experiment replication (in which case n_trials should be 1). None = random seed for each trial. Should be kept to None in general.
+:param name: the name of the series that is logged to tensorboard. if None then generates automatically, so in general could be kept as None.
+:param experiment: the name of the folder to log tensorboard results to. 
+
+Usually each "experiment" consists of multiple "runs", and each "run" consists of multiple "trials".
+Each "trial" has the same hparams but different seed, each "run" has different hparams, and each "experiment" has a different purpose that can be achieved through testing different runs.
+E.g. experiment = search for best NN architecture, run = attempting depth=2, width=64, trial = one random seed with depth=2, width=64
+
+:param process_idx: deprecated. It is used in properly displaying progress bars with `run_mp()`, but using Optuna for multiprocessing is preferred.
+:param process_queue: deprecated. It is used in properly displaying progress bars with `run_mp()`, but using Optuna for multiprocessing is preferred.
+"""
 def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, process_idx=0, process_queue=None):
     # default_params
     hparams = {
@@ -49,14 +66,17 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
         'depth': 2,
         'width': 64,
     }
+    # incorporate new hparams
     for k, v in new_hparams.items():
         hparams[k] = v
+    # generate a name for the log if not provided
     if name is None:
         name = f'{len(hparams["stocks"])}stock'
         for k, v in new_hparams.items():
             if k not in ['stocks','total_ts','eval_ts']:
                 name += f',{k}={v}'
     
+    # for each process, generate a seed, initiate inter-process communication pipe, and start worker.
     seeds = []
     processes = []
     pipes = []
@@ -71,10 +91,12 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
         processes.append(p)
         p.start()
 
+    # write hparams as a string and seeds to tensorboard
     datawriter = SummaryWriter(f'../tensorboard_logs/{name}' if experiment is None else f'../tensorboard_logs/{experiment}/{name}')
     datawriter.add_text('all_hparams', pprint.pformat(hparams), global_step=0)
     datawriter.add_text('seeds', str(seeds), global_step=0)
 
+    # obtain datapoints from each worker
     train_curve = []
     eval_curve = []
     total_ts = hparams['total_ts']
@@ -83,6 +105,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
     with tqdm(total=total_ts, desc=name, position=process_idx) as pbar:
         while curr_ts < total_ts:
 
+            # average the datapoints
             train_avg = 0
             eval_avg = 0
             valid_results = 0
@@ -99,6 +122,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
             train_curve.append(train_avg)
             eval_curve.append(eval_avg)
 
+            # log to tensorboard
             curr_ts += eval_ts
             datawriter.add_scalar('sharpe/train', train_avg, global_step=curr_ts)
             datawriter.add_scalar('sharpe/eval', eval_avg, global_step=curr_ts)
@@ -108,6 +132,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
     for p in processes:
         p.join()
 
+    # log results to tensorboard, and hparams as values (these need to be done together to get around tensorboard's weird directory structuring)
     hparams['stocks'] = len(hparams['stocks'])
     hparams['n_trials'] = n_trials
     metrics = {'metrics/max_eval_sharpe': max(eval_curve)}
@@ -120,6 +145,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
     return metrics['metrics/max_eval_sharpe']
 
 
+# worker process to actually train the RL algorithm
 def worker(hparams, seed, pipe):
     train_env = DailyTradingEnv(hparams['stocks'],
                                 dt.datetime(hparams['train_start'], 1, 1),
@@ -152,11 +178,14 @@ def worker(hparams, seed, pipe):
         
         train_score = evaluate(model, train_env)
         eval_score = evaluate(model, eval_env)
+        # send train and eval curve datapoints to manager process
         pipe.send((train_score, eval_score))
             
         curr_ts += eval_ts
 
 
+# manual multiprocessing code to run multiple "runs" (as defined in the docstring for `run()`) in succession. Can be used for gridsearch.
+# DEPRECATED. It is recommended to use Optuna to do multiprocessing.
 def run_mp(experiment):
     simultaneous_runs = 2
 
@@ -187,6 +216,7 @@ def run_mp(experiment):
         }).start()
     
 
+# Run ONE "run" instead of as a bigger experiment.
 def run_once(experiment):
     params = {
         'stocks': all_stocks,
@@ -204,6 +234,4 @@ def run_once(experiment):
 
 
 if __name__ == '__main__':
-    pass
-    #run_once('best_attention_test')
-    #run_mp('20stock_20M_run')
+    run_once('test')

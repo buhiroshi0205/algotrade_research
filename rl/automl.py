@@ -18,9 +18,11 @@ def objective(trial):
 
 if __name__ == '__main__':
     study = optuna.create_study(direction='maximize')
-    for i in range(100):
-        study.optimize(objective, n_trials=1)
-        with open(f'study{i}.pkl', 'wb') as f:
-            pickle.dump(study, f)
+    study.optimize(objective, n_trials=100)
     import pdb
     pdb.set_trace()
+
+# to parallelize across different processes, you can use an external storage option.
+# different processes on the same machine: sqlite works fine.
+# different machines: sqlite doesn't work well over NFS, so use a server-client db system such as mysql.
+# refer to Optuna documentation for more information.
