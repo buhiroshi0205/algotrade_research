@@ -5,6 +5,7 @@ from tqdm import tqdm
 import models
 
 
+# The normal training loop you see with any other supervised training in pytorch (with some parameters).
 def train_loop(train_loader,
                val_loader,
                model,
@@ -59,14 +60,31 @@ def train_loop(train_loader,
     model.cpu()
     
                 
-# hyperparams/config
-# model: dropout
-# training: optimizer, lr, lrschedule, weight_decay,
-# general: loss, epochs, batchsize
+"""
+Function to run an actual train loop based on the given configuration (as string).
+
+:param train_ds: training dataset (dataset.py/DailyDataset)
+:param val_ds: validation dataset (dataset.py/DailyDataset)
+:param model_name: which model (in directory models/) to use. Must have name registered in 'models/__init__.py'
+:param model_params: kwarg dictionary of parameters to pass to the constructor of the above model
+:param optimizer_name: optimizer to use. Must be one of the ones listed below, but maybe it can be changed to something more general?
+:param optimizer_params: kwarg dictionary of parameters to pass to the constructor of the optimizer
+:param lr: learning rate
+:param gamma: multiplicative constant for decaying the learning rate each epoch. After each epoch, this constant is multiplied to the learning rate.
+              Care should be taken with this value because it was weirdly tuned and has led to some weird results. The default probably doesn't work for
+              most models and purposes. Previously named 'lr_decay' where lr_decay = 1 - gamma.
+:param epochs: Number of epochs to train for
+:param eval_epochs: Interval of epochs before each evaluation of the model using the validation dataset. 1 is generally ok, unless you want SPEEEEEED
+                    and don't care about intermediate evaluation results
+:param batch_size: batch size
+:param verbose: 1 to print train/eval loss info while training. 0 is recommended during multiprocessing to not interleave outputs and not mess with progress bars.
+:param device_name: The torch.device(device_name) to use. Preferably manually specified. By default uses 'cuda' if available and 'cpu' if not.
+:param **kwargs: any kwargs to pass to the train_loop() function (should be nothing unless I messed up)
+"""
 def train_with_config(train_ds, val_ds,
                       model_name, model_params={},
                       optimizer_name='AdamW', optimizer_params={},
-                      lr=0.05, lr_decay=0.7,
+                      lr=0.05, gamma=0.3,
                       epochs=5, eval_epochs=1, batch_size=64,
                       verbose=1, device_name=None, **kwargs):
     
@@ -83,7 +101,7 @@ def train_with_config(train_ds, val_ds,
         'sgd': torch.optim.SGD
     }
     optimizer = optimizer_name_map[optimizer_name.lower()](model.parameters(), lr=lr, **optimizer_params)
-    lrscheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1-lr_decay)
+    lrscheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
     
     if device_name is None:
         device_name = 'cuda' if torch.cuda.is_available() else 'cpu'

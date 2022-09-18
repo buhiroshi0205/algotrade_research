@@ -21,6 +21,25 @@ FEATURES = [LABEL, 'PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_VOLUME',
 RSI_RANGE_START = 22
 RSI_RANGE_END = 26
 
+
+"""
+A pytorch dataset class to streamline the training process. Data is structured so model uses N days of data to predict M days of price,
+where the N'th day of input data is the same day as the M-1'th day of output data. We end up predicting only one new day of prices, while
+the other days are there so certain transformers perform better.
+
+   N days
+|----------|
+        |---|
+        M days
+
+X data is two-dimensional: one dimension is the days we look backward (size N), and the other dimension is all the features in `FEATURES`
+Y data is one-dimensional: the prices to predict.
+
+Both X and Y data are standardized, so we'll need to un-standardize the data for accurate pricing predictions.
+
+:param look_backward: = N
+:param predict_range: = M
+"""
 class DailyDataset(Dataset):
     def __init__(self, df: pd.DataFrame, look_backward: int, predict_range=1, dividend_df=None) -> None:
         self.df = df.dropna()
@@ -31,7 +50,7 @@ class DailyDataset(Dataset):
         self.df["QUARTER"] = self.df["Dates"].dt.quarter
         self.df = pd.get_dummies(self.df, prefix=["DOW", "Q"], columns=["DAYOFWEEK", "QUARTER"])
 
-        # Dividends
+        # Dividends, probably not that much useful
         self.df["PX_LAST_ADJUSTED"] = self.df["PX_LAST"]
         self.dividend_df = dividend_df
         if dividend_df is not None:
@@ -45,6 +64,7 @@ class DailyDataset(Dataset):
         self.predict_range = predict_range
         self.use_index = self.df.index[look_backward:]
 
+        # store in tensor for fast retrieval
         self.tensorx = torch.tensor(self.df[FEATURES].values, dtype=torch.float)
         self.tensory = torch.tensor(self.df[LABEL].values, dtype=torch.float)
         self.adjusted = self.df["PX_LAST_ADJUSTED"].values
@@ -77,6 +97,8 @@ class DailyDataset(Dataset):
             return x, y, move, x_mean[0], x_std[0]
         return x, y, move
 
+
+# Utility for obtaining train, eval, and test datasets together given two splits (val_start, test_start)
 def get_daily_dataset(df: pd.DataFrame, look_backward: int, val_start: dt.datetime,
                       test_start: dt.datetime, predict_range=1, div_df=None) -> Tuple[DailyDataset, DailyDataset, DailyDataset]:
     all_dates = pd.to_datetime(df["Dates"])

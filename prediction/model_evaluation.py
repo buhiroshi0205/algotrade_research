@@ -9,6 +9,11 @@ from dataset import DailyDataset, FEATURES
 
 TRADING_DAYS_IN_YEAR = 261
 
+
+# WHOLE FILE IS DEPRECATED. NOT USED BY WITH ANY OTHER CODE AS OF SEP 17 2022.
+# WE NEED A NEW EVALUATION CODE FOR THE PREDICTIONS PART, AFTER WHICH THIS FILE SHOULD BE DELETED.
+
+
 class ModelEvaluation():
     def __init__(self, daily_returns: List[float], baseline_returns: List[float], conf_matrix: np.ndarray) -> None:
         if len(daily_returns) != len(baseline_returns):

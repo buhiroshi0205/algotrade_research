@@ -12,13 +12,29 @@ from tqdm import tqdm
 import dataset
 import train_models
 
+
+"""
+The parameters of the training process NOT RELATED TO training individual models.
+
+:param symbols: the stocks to train predictions on. Each stock gets its independent model, and different stocks don't interact during predictions.
+:param ensemble_num: The number of models to train for the ensemble.
+:param experiment_name: The name of the experiment. The directions will be saved to the directory '../data/directions/{experiment_name}'.
+:param processes: The number of GPUs to use in parallel. Use 1 for testing purposes, as it prints more information and doesn't mess with device stuff.
+                  This script will use devices 'cuda:0, 'cuda:1', ..., 'cuda:{processes-1}' so make sure this param is <= the number of GPUs on the machine.
+                  If you don't want to use consecutive GPUs (e.g. some gpus are taken), you should specify the available GPUs using the environment variable
+                  'CUDA_VISIBLE_DEVICES', and this script will use the first {processes} devices in the visible devices list.
+                  
+"""
 symbols = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "MAY", "MISC", "NESZ", "PBK", "PEP", "PETD", "PTG", "RHBBANK", "ROTH", "T", "TNB"]
 ensemble_num = 10
 experiment_name = 'bestattention_2010split'
 processes = 4
 
 
-
+"""
+Generate ensemble directions csv based on trained models.
+we wish to PIVOT AWAY from using only directions, and use something more direct like predicted price mean + stdev.
+"""
 def generate_directions(stock, models, device, verbose):
     filename = os.path.join("../data/Day Data with Volatility", "{} MK Equity.csv".format(stock))
     df = pd.read_csv(filename)
@@ -44,6 +60,7 @@ def generate_directions(stock, models, device, verbose):
     direction_df.to_csv(f'../data/directions/{experiment_name}/Directions {stock}.csv')
 
 
+# train models and output results!
 def run(stocks, idx):
     print(f'Process {idx}: {stocks}')
     time.sleep(1)
@@ -57,6 +74,8 @@ def run(stocks, idx):
         for i in range(ensemble_num):
             pbar.set_description(f'{stock}-{i}/{ensemble_num}')
             
+            # the parameters for training that's RELATED TO training each invidual models.
+            # this is manually implemented. REFER TO `train_models.py/train_with_config()` for what options are available.
             train_config = {
                 'model_name': 'attention',
                 'model_params': {
@@ -68,14 +87,16 @@ def run(stocks, idx):
                 'optimizer_name': 'Adam',
                 'optimizer_params': {'weight_decay': 0.0001},
                 'lr': 0.005,
-                'lr_decay': 0.1,
+                'gamma': 0.9,
                 'epochs': 10,
                 'device_name': f'cuda:{idx}'
             }
 
             model = train_models.train_with_config(train_ds, val_ds, verbose=verbose, **train_config)
             models.append(model)
-            #torch.save(model.state_dict(), f'../checkpoints/{experiment_name}/{stock}_model{i}.pt')
+            # you can save the models as .pt weights files as well, but these take up a lot of disk space (last time it was 13G for 20 stocks)
+            # so we're not saving it during usual testing runs, and only saving directions csvs.
+            # torch.save(model.state_dict(), f'../checkpoints/{experiment_name}/{stock}_model{i}.pt')
             pbar.update()
         generate_directions(stock, models, torch.device(f'cuda:{idx}'), verbose)
     pbar.close()
@@ -84,6 +105,7 @@ def run(stocks, idx):
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     os.makedirs(f'../checkpoints/{experiment_name}', exist_ok=True)
+    # multiprocessing is much more complicated, so use processes == 1 for testing unless you're confident.
     if processes == 1:
         run(symbols, 0)
     else:
