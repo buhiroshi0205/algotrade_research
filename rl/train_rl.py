@@ -220,17 +220,13 @@ def run_mp(experiment):
 def run_once(experiment):
     params = {
         'stocks': all_stocks,
-        'train_directions': 'bestattention_2010split',
-        'eval_directions': 'bestattention_2018split',
+        'train_directions': '2010split',
+        'eval_directions': 'olivier',
         
-        'total_ts': int(1e7),
-        'eval_ts': int(5e4),
-
-        'n_steps': 20,
-        'depth': 1,
-        'width': 32
+        'total_ts': int(1e6),
+        'eval_ts': int(1e4),
     }
-    run(params, n_trials=20, experiment=experiment)
+    run(params, n_trials=1, experiment=experiment)
 
 
 if __name__ == '__main__':

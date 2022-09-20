@@ -27,8 +27,8 @@ The parameters of the training process NOT RELATED TO training individual models
 """
 symbols = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "MAY", "MISC", "NESZ", "PBK", "PEP", "PETD", "PTG", "RHBBANK", "ROTH", "T", "TNB"]
 ensemble_num = 10
-experiment_name = 'bestattention_2010split'
-processes = 4
+experiment_name = 'test'
+processes = 1
 
 
 """
@@ -89,7 +89,7 @@ def run(stocks, idx):
                 'lr': 0.005,
                 'gamma': 0.9,
                 'epochs': 10,
-                'device_name': f'cuda:{idx}'
+                'device_name': f'cuda:{idx}' if torch.cuda.is_available() else 'cpu'
             }
 
             model = train_models.train_with_config(train_ds, val_ds, verbose=verbose, **train_config)

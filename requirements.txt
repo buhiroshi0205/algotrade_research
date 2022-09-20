@@ -1,5 +1,6 @@
 torch
 stable-baselines3
+optuna
 tqdm
 quantstats
 tensorboard

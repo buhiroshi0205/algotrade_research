@@ -14,7 +14,7 @@ def objective(trial):
         'depth': trial.suggest_int('depth', 1, 3),
         'width': trial.suggest_int('width', 1, 128)
     }
-    return run(params, n_trials=30, experiment='automl_test')
+    return run(params, n_trials=20, experiment='automl_test')
 
 if __name__ == '__main__':
     study = optuna.create_study(direction='maximize')
