@@ -3,6 +3,7 @@ import multiprocessing as mp
 import random
 import pprint
 import math
+import time
 
 from stable_baselines3 import A2C, PPO
 import quantstats as qs
@@ -24,6 +25,8 @@ def evaluate(model, env, metric='sharpe'):
     while not done:
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, info = env.step(action)
+    if np.std(env.balance_record) < 1e-3:
+        return 0
     return qs.stats.sharpe(pd.Series(env.balance_record))
 
 """
@@ -60,7 +63,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
         'eval_ts': int(1e4),
 
         'gamma': 0,
-        'n_steps': 5,
+        'n_steps': 2048,
         'lr': 0.0007,
         'ent_coef': 0.0003,
         'depth': 2,
@@ -75,6 +78,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
         for k, v in new_hparams.items():
             if k not in ['stocks','total_ts','eval_ts']:
                 name += f',{k}={v}'
+        name += ',' + str(time.time()).split('.')[1][:6]
     
     # for each process, generate a seed, initiate inter-process communication pipe, and start worker.
     seeds = []
@@ -161,7 +165,7 @@ def worker(hparams, seed, pipe):
     d = hparams['depth']
     w = hparams['width']
 
-    model = A2C('MlpPolicy', train_env, device='cpu',
+    model = PPO('MlpPolicy', train_env, device='cpu',
                 learning_rate=hparams['lr'],
                 ent_coef=hparams['ent_coef'],
                 gamma=hparams['gamma'],
@@ -187,19 +191,14 @@ def worker(hparams, seed, pipe):
 # manual multiprocessing code to run multiple "runs" (as defined in the docstring for `run()`) in succession. Can be used for gridsearch.
 # DEPRECATED. It is recommended to use Optuna to do multiprocessing.
 def run_mp(experiment):
-    simultaneous_runs = 2
+    simultaneous_runs = 4
 
     params_search_list = []
-    for depth in [2]:
-        for width in [32,64]:
-            params = {
-                'depth': depth,
-                'width': width,
-                'n_steps': 20,
-                'total_ts': int(2e7),
-                'eval_ts': int(5e4),
-            }
-            params_search_list.append(params)
+    for stockidx in range(20):
+        params = {
+            'stocks': all_stocks[stockidx:stockidx+1]
+        }
+        params_search_list.append(params)
     print(params_search_list)
 
     q = mp.Queue()
@@ -209,7 +208,7 @@ def run_mp(experiment):
         free_process_idx = q.get()
         mp.Process(target=run, kwargs={
             'new_hparams': p,
-            'n_trials': 30,
+            'n_trials': 20,
             'experiment': experiment,
             'process_idx': free_process_idx,
             'process_queue': q
@@ -219,15 +218,16 @@ def run_mp(experiment):
 # Run ONE "run" instead of as a bigger experiment.
 def run_once(experiment):
     params = {
-        'stocks': all_stocks,
+        'stocks': all_stocks[:1],
         'train_directions': '2010split',
         'eval_directions': 'olivier',
         
         'total_ts': int(1e6),
         'eval_ts': int(1e4),
     }
-    run(params, n_trials=1, experiment=experiment)
+    run(params, n_trials=20, experiment=experiment)
 
 
 if __name__ == '__main__':
     run_once('test')
+    #run_mp('singlestock')

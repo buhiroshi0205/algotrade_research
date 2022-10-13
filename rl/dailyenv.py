@@ -42,7 +42,7 @@ class DailyTradingEnv(gym.Env):
             # dividends (currently mostly ignored since there is little dividend)            
             dividend_df = pd.read_csv(f'../data/dividends/{ticker} dividend.csv', parse_dates=True, index_col="Date").loc[start_date:end_date]
             s = pd.Series(data=0, index=self.dates)
-            for k, v in dividend_df['Dividends'].iteritems():
+            for k, v in dividend_df['Dividends'].items():
                 s[k] = v
             self.dividends.append(s.to_numpy())
         
