@@ -187,6 +187,8 @@ def worker(hparams, seed, pipe):
             
         curr_ts += eval_ts
 
+    # qs.reports.html(stock, download_filename=f'trial_{seed}.html')
+
 
 # manual multiprocessing code to run multiple "runs" (as defined in the docstring for `run()`) in succession. Can be used for gridsearch.
 # DEPRECATED. It is recommended to use Optuna to do multiprocessing.
