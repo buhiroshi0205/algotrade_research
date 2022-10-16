@@ -52,9 +52,12 @@ class DailyTradingEnv(gym.Env):
 
         self.period_length = len(self.last_prices) - 2
 
+        self.curr_portfolio = np.zeros(len(tickers))
         self.curr_index = 0
         self.current_balance = 100000
         self.last_reward = 0
+        # Cost as fraction of transaction amount
+        self.transaction_cost = 0.01
         
     def step(self, action: np.ndarray):
         assert len(action) == len(self.tickers) + 1
@@ -71,8 +74,10 @@ class DailyTradingEnv(gym.Env):
         next_day_div = self.dividends[self.curr_index + 1]
 
         shares = np.floor(self.current_balance * weights[1:] / curr_prices)
-        profits = np.dot(next_prices - curr_prices, shares)
+        profits = np.dot(next_prices - curr_prices, shares) - np.sum(np.dot(curr_prices, np.abs(shares - self.curr_portfolio)))*self.transaction_cost
         div_received = np.dot(next_day_div, shares)
+
+        self.curr_portfolio = shares
 
         reward = self._calc_reward(profits, div_received)
 
@@ -82,7 +87,7 @@ class DailyTradingEnv(gym.Env):
 
         self.last_reward = reward
     
-        obs, rew, done, info = self._get_obs(), reward, self.curr_index == self.period_length, {}
+        obs, rew, done, info = self._get_obs(), reward, self.current_balance <= 0 or self.curr_index == self.period_length, {}
 
         return obs, rew, done, info
 
@@ -106,3 +111,4 @@ class DailyTradingEnv(gym.Env):
 
     def _get_obs(self):
         return self.directions[self.curr_index]
+        # return np.array([self.directions[self.curr_index], self.curr_portfolio != 0])
