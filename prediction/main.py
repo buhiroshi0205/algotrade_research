@@ -29,6 +29,7 @@ symbols = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "
 ensemble_num = 10
 experiment_name = 'test'
 processes = 1
+evaluate_sharpe = True
 
 
 """
@@ -105,6 +106,7 @@ def run(stocks, idx):
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     os.makedirs(f'../checkpoints/{experiment_name}', exist_ok=True)
+
     # multiprocessing is much more complicated, so use processes == 1 for testing unless you're confident.
     if processes == 1:
         run(symbols, 0)
@@ -117,3 +119,40 @@ if __name__ == '__main__':
             processes_list[i].start()
         for i in range(processes):
             processes_list[i].join()
+    
+    if evaluate_sharpe:
+        # import dailyenv in other directory
+        import pathlib, sys
+        rldir = pathlib.Path(__file__).parent.parent / 'rl'
+        if not rldir.exists():
+            print('ERROR: Could not find rl module, exiting without sharpe evaluation.')
+            exit()
+        sys.path.append(str(rldir))
+        from dailyenv import DailyTradingEnv
+        import quantstats as qs
+
+        # evaluate using baseline rl
+        def threshold(obs, n):
+            action = np.zeros(len(obs)+1)
+            for i in range(len(obs)):
+                if obs[i] * ensemble_num >= n:
+                    action[i+1] = 1
+            if np.sum(action) == 0:
+                action[0] = 1
+            return action
+
+        # for baseline strategy, loop over n from 0 to {ensemble_num} inclusive
+        best_sharpe = -float('inf')
+        for n in tqdm(range(ensemble_num+1)):
+            env = DailyTradingEnv(symbols, dt.datetime(2018, 1, 1), dt.datetime(2020, 1, 1), experiment_name)
+            obs = env.reset()
+            done = False
+            while not done:
+                action = threshold(obs, n=n)
+                obs, reward, done, info = env.step(action)
+            series = pd.Series(env.balance_record, index=env.dates[:-1])
+            if series.std() > 1e-3:
+                best_sharpe = max(best_sharpe, qs.stats.sharpe(series))
+            else:
+                best_sharpe = max(best_sharpe, 0)
+        print(f'sharpe = {best_sharpe}')
