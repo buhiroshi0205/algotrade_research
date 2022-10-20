@@ -27,8 +27,8 @@ The parameters of the training process NOT RELATED TO training individual models
 """
 symbols = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "MAY", "MISC", "NESZ", "PBK", "PEP", "PETD", "PTG", "RHBBANK", "ROTH", "T", "TNB"]
 ensemble_num = 10
-experiment_name = 'test'
-processes = 1
+experiment_name = 'meanstd'
+processes = 4
 evaluate_sharpe = True
 
 
@@ -39,7 +39,7 @@ we wish to PIVOT AWAY from using only directions, and use something more direct 
 def generate_directions(stock, models, device, verbose):
     filename = os.path.join("../data/Day Data with Volatility", "{} MK Equity.csv".format(stock))
     df = pd.read_csv(filename)
-    ds = dataset.DailyDataset(df, 30, predict_range=3)
+    ds = dataset.DailyDataset(df, 30, predict_range=1, return_scale=True)
     for m in models:
         m.eval()
         m.to(device)
@@ -47,16 +47,19 @@ def generate_directions(stock, models, device, verbose):
     direction_df = pd.DataFrame(index=ds.df.loc[ds.use_index, "Dates"])
     loader = torch.utils.data.DataLoader(ds, batch_size=64)
     with torch.no_grad():
-        for i, (X, y, _) in enumerate(tqdm(loader, desc='generating directions...') if verbose else loader):
+        for i, (X, y, _, mean, std) in enumerate(tqdm(loader, desc='generating directions...') if verbose else loader):
             X, y = X.to(device), y.to(device)
             preds = [model(X, y=y, teacher_forcing_rate = 0.95, Gumbel_noise=False, mode='val').squeeze() for model in models]
-            all_preds = [pred[:,-1].cpu() for pred in preds]
+            all_preds = [pred.cpu() for pred in preds]
             X = X.cpu()
             for k in range(X.shape[0]):
                 preds = [p[k].item() for p in all_preds]
                 direction_df.loc[direction_df.index[i * 64 + k], "AVG"] = np.sign(np.average(preds) - X[k, -1, 0]).item()
                 for j, p in enumerate(preds):
                     direction_df.loc[direction_df.index[i * 64 + k], f"MODEL_{j+1}"] = np.sign(p - X[k, -1, 0]).item()
+                    norm_p = p * std[j] + mean[j]
+                    norm_x = X[k,-1,0] * std[j] + mean[j]
+                    direction_df.loc[direction_df.index[i * 64 + k], f"PCT_{j+1}"] = ((norm_p-norm_x)/norm_x).item()
     os.makedirs(f'../data/directions/{experiment_name}', exist_ok=True)
     direction_df.to_csv(f'../data/directions/{experiment_name}/Directions {stock}.csv')
 
@@ -70,7 +73,7 @@ def run(stocks, idx):
 
     for stock in stocks:
         df = pd.read_csv(f'../data/Day Data with Volatility/{stock} MK Equity.csv')
-        train_ds, val_ds, test_ds = dataset.get_daily_dataset(df, 30, dt.datetime(2010, 1, 1), dt.datetime(2020, 1, 1), predict_range=3)
+        train_ds, val_ds, test_ds = dataset.get_daily_dataset(df, 30, dt.datetime(2010, 1, 1), dt.datetime(2020, 1, 1), predict_range=1)
         models = []
         for i in range(ensemble_num):
             pbar.set_description(f'{stock}-{i}/{ensemble_num}')
@@ -78,18 +81,15 @@ def run(stocks, idx):
             # the parameters for training that's RELATED TO training each invidual models.
             # this is manually implemented. REFER TO `train_models.py/train_with_config()` for what options are available.
             train_config = {
-                'model_name': 'attention',
+                'model_name': 'default',
                 'model_params': {
-                    'input_dim': len(dataset.FEATURES),
-                    'encoder_hidden_dim': 128,
-                    'decoder_hidden_dim':256,
-                    'key_value_size': 128
+                    'dim_0': len(dataset.FEATURES),
                 },
                 'optimizer_name': 'Adam',
                 'optimizer_params': {'weight_decay': 0.0001},
                 'lr': 0.005,
                 'gamma': 0.9,
-                'epochs': 10,
+                'epochs': 2,
                 'device_name': f'cuda:{idx}' if torch.cuda.is_available() else 'cpu'
             }
 

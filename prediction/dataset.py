@@ -41,7 +41,7 @@ Both X and Y data are standardized, so we'll need to un-standardize the data for
 :param predict_range: = M
 """
 class DailyDataset(Dataset):
-    def __init__(self, df: pd.DataFrame, look_backward: int, predict_range=1, dividend_df=None) -> None:
+    def __init__(self, df: pd.DataFrame, look_backward: int, predict_range=1, dividend_df=None, return_scale=False) -> None:
         self.df = df.dropna()
 
         # Dates preprocessing
@@ -68,6 +68,8 @@ class DailyDataset(Dataset):
         self.tensorx = torch.tensor(self.df[FEATURES].values, dtype=torch.float)
         self.tensory = torch.tensor(self.df[LABEL].values, dtype=torch.float)
         self.adjusted = self.df["PX_LAST_ADJUSTED"].values
+
+        self.return_scale = return_scale
     
     def __len__(self) -> int:
         return len(self.use_index)
@@ -93,7 +95,7 @@ class DailyDataset(Dataset):
 
         move = self.adjusted[index+self.look_backward] / self.adjusted[index+self.look_backward-1] - 1
 
-        if return_scale:
+        if return_scale or self.return_scale:
             return x, y, move, x_mean[0], x_std[0]
         return x, y, move
 

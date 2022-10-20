@@ -46,7 +46,7 @@ E.g. experiment = search for best NN architecture, run = attempting depth=2, wid
 :param process_idx: deprecated. It is used in properly displaying progress bars with `run_mp()`, but using Optuna for multiprocessing is preferred.
 :param process_queue: deprecated. It is used in properly displaying progress bars with `run_mp()`, but using Optuna for multiprocessing is preferred.
 """
-def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, process_idx=0, process_queue=None):
+def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, process_idx=0, process_queue=None, debug=False):
     # default_params
     hparams = {
         'stocks': all_stocks,
@@ -91,6 +91,9 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
         parent, child = mp.Pipe()
         pipes.append(parent)
         
+        if debug:
+            worker(hparams, newseed, child)
+            return
         p = mp.Process(target=worker, args=(hparams, newseed, child))
         processes.append(p)
         p.start()
@@ -154,11 +157,13 @@ def worker(hparams, seed, pipe):
     train_env = DailyTradingEnv(hparams['stocks'],
                                 dt.datetime(hparams['train_start'], 1, 1),
                                 dt.datetime(hparams['train_end'], 1, 1),
-                                hparams['train_directions'])
+                                hparams['train_directions'],
+                                use_meanstd=True)
     eval_env = DailyTradingEnv(hparams['stocks'],
                                dt.datetime(hparams['eval_start'], 1, 1), 
                                dt.datetime(hparams['eval_end'], 1, 1), 
-                               hparams['eval_directions'])
+                               hparams['eval_directions'],
+                               use_meanstd=True)
 
     total_ts = hparams['total_ts']
     eval_ts = hparams['eval_ts']
@@ -220,16 +225,16 @@ def run_mp(experiment):
 # Run ONE "run" instead of as a bigger experiment.
 def run_once(experiment):
     params = {
-        'stocks': all_stocks[:1],
-        'train_directions': '2010split',
-        'eval_directions': 'olivier',
+        'stocks': all_stocks,
+        'train_directions': 'meanstd',
+        'eval_directions': 'meanstd',
         
-        'total_ts': int(1e6),
+        'total_ts': int(2e6),
         'eval_ts': int(1e4),
     }
-    run(params, n_trials=20, experiment=experiment)
+    run(params, n_trials=20, experiment=experiment, name='use_meanstds')
 
 
 if __name__ == '__main__':
-    run_once('test')
+    run_once('meanstd')
     #run_mp('singlestock')

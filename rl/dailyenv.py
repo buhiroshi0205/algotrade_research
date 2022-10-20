@@ -8,7 +8,7 @@ import pandas as pd
 
 class DailyTradingEnv(gym.Env):
 
-    def __init__(self, tickers: List[str], start_date: dt.datetime, end_date: dt.datetime, directions_src: str) -> None:
+    def __init__(self, tickers: List[str], start_date: dt.datetime, end_date: dt.datetime, directions_src: str, use_meanstd=False) -> None:
         super(DailyTradingEnv, self).__init__()
         self.tickers = tickers
         self.start = start_date
@@ -19,6 +19,7 @@ class DailyTradingEnv(gym.Env):
 
         self.last_prices = []
         self.directions = []
+        self.meanstds = []
         self.dividends = []
 
         self.reward_range = (0, np.inf)
@@ -26,7 +27,10 @@ class DailyTradingEnv(gym.Env):
         # Note that there aren't transaction costs yet. Money is divided evenly into each stock that we choose to buy.
         self.action_space = spaces.MultiBinary(len(tickers) + 1)
         # observation space is a float array. Index i = the fraction of the ensemble models that predict the i'th stock to go up
-        self.observation_space = spaces.Box(low=0, high=1, shape=(len(tickers),))
+        if use_meanstd:
+            self.observation_space = spaces.Box(low=-1, high=1, shape=(len(tickers),2))
+        else:
+            self.observation_space = spaces.Box(low=0, high=1, shape=(len(tickers),))
 
         # load data
         for ticker in tickers:
@@ -36,8 +40,15 @@ class DailyTradingEnv(gym.Env):
             
             # predicted directions from the ensemble
             directions_df = pd.read_csv(f'../data/directions/{directions_src}/Directions {ticker}.csv', parse_dates=True, index_col="Dates").loc[start_date:end_date][1:]
-            directions_np = (directions_df.drop(columns='AVG') == 1).sum(axis=1).to_numpy()/10
+            directions_np = (directions_df[[f'MODEL_{i}' for i in range(1,11)]] == 1).sum(axis=1).to_numpy()/10
             self.directions.append(directions_np)
+
+            if use_meanstd:
+                # predicted mean and std from the ensemble
+                meanstd_df = directions_df[[f'PCT_{i}' for i in range(1,11)]]
+                mean_np = meanstd_df.mean(axis=1).to_numpy()
+                std_np = meanstd_df.std(axis=1).to_numpy()
+                self.meanstds.append([mean_np, std_np])
             
             # dividends (currently mostly ignored since there is little dividend)            
             dividend_df = pd.read_csv(f'../data/dividends/{ticker} dividend.csv', parse_dates=True, index_col="Date").loc[start_date:end_date]
@@ -48,6 +59,8 @@ class DailyTradingEnv(gym.Env):
         
         self.last_prices = np.array(self.last_prices).T
         self.directions = np.array(self.directions).T
+        if use_meanstd:
+            self.meanstds = np.moveaxis(np.array(self.meanstds), 2, 0)
         self.dividends = np.array(self.dividends).T
 
         self.period_length = len(self.last_prices) - 2
@@ -57,7 +70,7 @@ class DailyTradingEnv(gym.Env):
         self.current_balance = 100000
         self.last_reward = 0
         # Cost as fraction of transaction amount
-        self.transaction_cost = 0.01
+        self.transaction_cost = 0.00
         
     def step(self, action: np.ndarray):
         assert len(action) == len(self.tickers) + 1
@@ -110,5 +123,8 @@ class DailyTradingEnv(gym.Env):
         return reward
 
     def _get_obs(self):
-        return self.directions[self.curr_index]
+        if len(self.meanstds) > 0:
+            return np.clip(self.meanstds[self.curr_index],-1,1)
+        else:
+            return self.directions[self.curr_index]
         # return np.array([self.directions[self.curr_index], self.curr_portfolio != 0])
