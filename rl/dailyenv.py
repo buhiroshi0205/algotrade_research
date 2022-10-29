@@ -99,7 +99,7 @@ class DailyTradingEnv(gym.Env):
         reward = self._calc_reward(profits, div_received)
 
         self.current_balance += div_received
-        self.balance_record.append(self.current_balance)
+        self.balance_record.append(self.current_balance + np.dot(self.curr_portfolio, curr_prices))
         self.curr_index += 1
 
         self.last_reward = reward
