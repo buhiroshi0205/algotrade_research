@@ -74,7 +74,7 @@ class DailyTradingEnv(gym.Env):
         next_day_div = self.dividends[self.curr_index + 1]
         
         # First sell stocks
-        profits = np.dot(curr_prices[sell_mask] - self.cost_basis[sell_mask], self.curr_portfolio[sell_mask])
+        profits = np.dot(curr_prices[sell_mask], self.curr_portfolio[sell_mask])
         profits -= np.sum(np.dot(curr_prices[sell_mask], self.curr_portfolio[sell_mask]))*self.transaction_cost
         
         self.current_balance += profits
@@ -92,9 +92,7 @@ class DailyTradingEnv(gym.Env):
         self.cost_basis[buy_mask] = ((self.cost_basis[buy_mask]*self.curr_portfolio[buy_mask]) + (curr_prices[buy_mask]*new_shares[buy_mask]))/(self.curr_portfolio[buy_mask]+new_shares[buy_mask]+ (1e-8))
         self.curr_portfolio += new_shares
         
-        div_received = np.dot(next_day_div, self.curr_portfolio)
-        
-        
+        div_received = np.dot(next_day_div, self.curr_portfolio)        
 
         reward = self._calc_reward(profits, div_received)
 
@@ -114,6 +112,7 @@ class DailyTradingEnv(gym.Env):
         self.last_reward = 0
         self.balance_record = [self.current_balance]
         self.curr_portfolio = np.zeros(self.curr_portfolio.shape)
+        self.cost_basis = np.zeros(self.curr_portfolio.shape)
         return self._get_obs()
 
     def render(self, mode="human"):
