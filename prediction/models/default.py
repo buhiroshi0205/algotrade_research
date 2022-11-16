@@ -23,7 +23,7 @@ class DailyModel(Module):
         self.bn_gru = BatchNorm1d(dim_2)
         self.bn_lin_a = BatchNorm1d(dim_2)
 
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x, **kwargs) -> torch.Tensor:
         batch_size = x.shape[0]
 
         # Linear + ReLU

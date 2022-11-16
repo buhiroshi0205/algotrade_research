@@ -28,7 +28,7 @@ The parameters of the training process NOT RELATED TO training individual models
 symbols = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "MAY", "MISC", "NESZ", "PBK", "PEP", "PETD", "PTG", "RHBBANK", "ROTH", "T", "TNB"]
 ensemble_num = 10
 experiment_name = 'test'
-processes = 1
+processes = 4
 evaluate_sharpe = True
 
 
@@ -50,7 +50,10 @@ def generate_directions(stock, models, device, verbose):
         for i, (X, y, _) in enumerate(tqdm(loader, desc='generating directions...') if verbose else loader):
             X, y = X.to(device), y.to(device)
             preds = [model(X, y=y, teacher_forcing_rate = 0.95, Gumbel_noise=False, mode='val').squeeze() for model in models]
-            all_preds = [pred[:,-1].cpu() for pred in preds]
+            if len(preds[0].size()) > 1:
+                all_preds = [pred[:,-1].cpu() for pred in preds]
+            else:
+                all_preds = [pred.cpu() for pred in preds]
             X = X.cpu()
             for k in range(X.shape[0]):
                 preds = [p[k].item() for p in all_preds]
@@ -70,6 +73,7 @@ def run(stocks, idx):
 
     for stock in stocks:
         df = pd.read_csv(f'../data/Day Data with Volatility/{stock} MK Equity.csv')
+        # default GRN only accepts predict_range=1
         train_ds, val_ds, test_ds = dataset.get_daily_dataset(df, 30, dt.datetime(2010, 1, 1), dt.datetime(2020, 1, 1), predict_range=3)
         models = []
         for i in range(ensemble_num):
@@ -92,6 +96,19 @@ def run(stocks, idx):
                 'epochs': 10,
                 'device_name': f'cuda:{idx}' if torch.cuda.is_available() else 'cpu'
             }
+            # original GRN training hparams
+            # train_config = {
+            #     'model_name': 'default',
+            #     'model_params': {
+            #         'dim_0': len(dataset.FEATURES),
+            #     },
+            #     'optimizer_name': 'Adam',
+            #     'optimizer_params': {'weight_decay': 0.0001},
+            #     'lr': 0.05,
+            #     'gamma': 0.3,
+            #     'epochs': 15,
+            #     'device_name': f'cuda:{idx}' if torch.cuda.is_available() else 'cpu'
+            # }
 
             model = train_models.train_with_config(train_ds, val_ds, verbose=verbose, **train_config)
             models.append(model)
