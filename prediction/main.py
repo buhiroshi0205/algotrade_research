@@ -27,9 +27,9 @@ The parameters of the training process NOT RELATED TO training individual models
 """
 symbols = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "MAY", "MISC", "NESZ", "PBK", "PEP", "PETD", "PTG", "RHBBANK", "ROTH", "T", "TNB"]
 ensemble_num = 10
-experiment_name = 'test'
-processes = 4
-evaluate_sharpe = True
+evaluate_sharpe = False
+experiment_name = '2018split_open_with_sp'
+processes = 1
 
 
 """
@@ -63,6 +63,34 @@ def generate_directions(stock, models, device, verbose):
     os.makedirs(f'../data/directions/{experiment_name}', exist_ok=True)
     direction_df.to_csv(f'../data/directions/{experiment_name}/Directions {stock}.csv')
 
+    
+def generate_predictions(stock, models, device, verbose):
+    filename = os.path.join("../data/Day Data with Volatility", "{} MK Equity.csv".format(stock))
+    df = pd.read_csv(filename)
+    ds = dataset.DailyDataset(df, 30, predict_range=3)
+    for m in models:
+        m.eval()
+        m.to(device)
+
+    prediction_df = pd.DataFrame(index=ds.df.loc[ds.use_index, "Dates"])
+    loader = torch.utils.data.DataLoader(ds, batch_size=64)
+    with torch.no_grad():
+        for i, (X, y, _) in enumerate(tqdm(loader, desc='generating predictions...') if verbose else loader):
+            X, y = X.to(device), y.to(device)
+            preds = [model(X, y=y, teacher_forcing_rate = 0.95, Gumbel_noise=False, mode='val').squeeze() for model in models]
+            all_preds = [pred[:,-1].cpu() for pred in preds]
+            X = X.cpu()
+            for k in range(X.shape[0]):
+                preds = [p[k].item() for p in all_preds]
+                # prediction_df.loc[prediction_df.index[i * 64 + k], "AVG"] = (np.average(preds)/X[k, -1, 0]).item() - 1
+                prediction_df.loc[prediction_df.index[i * 64 + k], "AVG"] = np.average(preds)
+                for j, p in enumerate(preds):
+                    # prediction_df.loc[prediction_df.index[i * 64 + k], f"MODEL_{j+1}"] = np.log(p/X[k, -1, 0]).item()
+                    # prediction_df.loc[prediction_df.index[i * 64 + k], f"MODEL_{j+1}"] = (p/X[k, -1, 0]).item() - 1
+                    prediction_df.loc[prediction_df.index[i * 64 + k], f"MODEL_{j+1}"] = p
+    os.makedirs(f'../data/predictions/{experiment_name}', exist_ok=True)
+    prediction_df.to_csv(f'../data/predictions/{experiment_name}/Predictions {stock}.csv')
+
 
 # train models and output results!
 def run(stocks, idx):
@@ -73,8 +101,7 @@ def run(stocks, idx):
 
     for stock in stocks:
         df = pd.read_csv(f'../data/Day Data with Volatility/{stock} MK Equity.csv')
-        # default GRN only accepts predict_range=1
-        train_ds, val_ds, test_ds = dataset.get_daily_dataset(df, 30, dt.datetime(2010, 1, 1), dt.datetime(2020, 1, 1), predict_range=3)
+        train_ds, val_ds, test_ds = dataset.get_daily_dataset(df, 30, dt.datetime(2018, 1, 1), dt.datetime(2020, 1, 1), predict_range=3)
         models = []
         for i in range(ensemble_num):
             pbar.set_description(f'{stock}-{i}/{ensemble_num}')
@@ -117,6 +144,7 @@ def run(stocks, idx):
             # torch.save(model.state_dict(), f'../checkpoints/{experiment_name}/{stock}_model{i}.pt')
             pbar.update()
         generate_directions(stock, models, torch.device(f'cuda:{idx}'), verbose)
+        # generate_predictions(stock, models, torch.device(f'cuda:{idx}'), verbose)
     pbar.close()
 
 
@@ -173,3 +201,4 @@ if __name__ == '__main__':
             else:
                 best_sharpe = max(best_sharpe, 0)
         print(f'sharpe = {best_sharpe}')
+
