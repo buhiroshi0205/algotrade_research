@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 import pandas as pd
 pd.options.mode.chained_assignment = None
 
-LABEL = "PX_LAST"
+LABEL = "PX_OPEN"
 LABEL_ADJUSTED = LABEL + '_ADJUSTED'
 FEATURES = [
     'PX_LAST', 'PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_VOLUME',
