@@ -38,17 +38,15 @@ class DailyTradingEnv(gym.Env):
             day_data_df = pd.read_csv(f'../data/day_data/{ticker} MK Equity.csv', parse_dates=True, index_col="Dates").loc[start_date:end_date]
             self.last_prices.append(day_data_df["PX_LAST"].to_numpy())
             
-            # predicted directions from the ensemble
             directions_df = pd.read_csv(f'../data/directions/{directions_src}/Directions {ticker}.csv', parse_dates=True, index_col="Dates").loc[start_date:end_date][1:]
-            directions_np = (directions_df[[f'MODEL_{i}' for i in range(1,11)]] == 1).sum(axis=1).to_numpy()/10
-            self.directions.append(directions_np)
-
             if use_meanstd:
-                # predicted mean and std from the ensemble
-                meanstd_df = directions_df[[f'PCT_{i}' for i in range(1,11)]]
-                mean_np = meanstd_df.mean(axis=1).to_numpy()
-                std_np = meanstd_df.std(axis=1).to_numpy()
+                mean_np = directions_df['MEAN'].to_numpy()
+                std_np = directions_df['STD'].to_numpy()
                 self.meanstds.append([mean_np, std_np])
+            else:
+                # predicted directions from the ensemble
+                directions_np = (directions_df[[f'MODEL_{i}' for i in range(1,11)]] == 1).sum(axis=1).to_numpy()/10
+                self.directions.append(directions_np)
             
             # dividends (currently mostly ignored since there is little dividend)            
             dividend_df = pd.read_csv(f'../data/dividends/{ticker} dividend.csv', parse_dates=True, index_col="Date").loc[start_date:end_date]
@@ -58,9 +56,10 @@ class DailyTradingEnv(gym.Env):
             self.dividends.append(s.to_numpy())
         
         self.last_prices = np.array(self.last_prices).T
-        self.directions = np.array(self.directions).T
         if use_meanstd:
             self.meanstds = np.moveaxis(np.array(self.meanstds), 2, 0)
+        else:
+            self.directions = np.array(self.directions).T
         self.dividends = np.array(self.dividends).T
 
         self.period_length = len(self.last_prices) - 2

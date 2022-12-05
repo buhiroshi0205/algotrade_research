@@ -226,15 +226,20 @@ def run_mp(experiment):
 def run_once(experiment):
     params = {
         'stocks': all_stocks,
-        'train_directions': 'meanstd',
-        'eval_directions': 'meanstd',
+        'train_directions': 'NLL2010',
+        'eval_directions': 'NLL2018',
+        
+        'lr': 0.001,
+        'ent_coef': 0.01,
+        'depth': 1,
+        'width': 64,
         
         'total_ts': int(2e6),
         'eval_ts': int(1e4),
     }
-    run(params, n_trials=20, experiment=experiment, name='use_meanstds')
+    run(params, n_trials=20, experiment=experiment, name='nll_meanstd2')
 
 
 if __name__ == '__main__':
-    run_once('meanstd')
+    run_once('NLLtest')
     #run_mp('singlestock')
