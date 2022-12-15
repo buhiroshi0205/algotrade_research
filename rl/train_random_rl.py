@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-from dailyenv import DailyTradingEnv
+from randomenv import RandomEnv
 
 
 all_stocks = ["AMM", "CIMB", "DIGI", "GAM", "GENM", "GENT", "HLBK", "IOI", "KLK", "MAY", "MISC", "NESZ", "PBK", "PEP", "PETD", "PTG", "RHBBANK", "ROTH", "T", "TNB"]
@@ -25,9 +25,9 @@ def evaluate(model, env, metric='sharpe'):
     while not done:
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, info = env.step(action)
-    if np.std(env.balance_record) < 1e-3:
+    if np.std(env.history) < 1e-3:
         return 0
-    return qs.stats.sharpe(pd.Series(env.balance_record))
+    return qs.stats.sharpe(pd.Series(env.history))
 
 """
 The function that actually trains the RL model based on input parameters.
@@ -50,16 +50,12 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
     # default_params
     hparams = {
         'stocks': all_stocks,
-
-        'train_start': 2010,
-        'train_end': 2018,
-        'train_directions': '2010split',
-
-        'eval_start': 2018,
-        'eval_end': 2020,
-        'eval_directions': 'olivier',
-
-        'total_ts': int(1e6),
+        'train_split':[(['2000-4-25','2004-7-1'], 'q_1'), (['2000-4-25','2004-7-1'], 'q_2'), (['2000-4-25','2004-7-1'], 'q_3'),
+			(['2004-7-1','2009-1-1'], 'q_0'), (['2004-7-1','2009-1-1'], 'q_2'), (['2004-7-1','2009-1-1'], 'q_3'),
+			(['2009-1-1','2013-7-1'], 'q_0'), (['2009-1-1','2013-7-1'], 'q_1'), (['2009-1-1','2013-7-1'], 'q_3'),
+			(['2013-7-1','2018-1-1'], 'q_0'), (['2013-7-1','2018-1-1'], 'q_1'), (['2013-7-1','2018-1-1'], 'q_2')],
+        'val_split':[(['2018-1-1','2020-1-1'], 'olivier')],
+        'total_ts': int(5e6),
         'eval_ts': int(1e4),
 
         'gamma': 0,
@@ -68,6 +64,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
         'ent_coef': 1e-3,
         'depth': 1,
         'width': 100,
+        'tc':0.00
     }
     # incorporate new hparams
     for k, v in new_hparams.items():
@@ -75,10 +72,7 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
     # generate a name for the log if not provided
     if name is None:
         name = f'{len(hparams["stocks"])}stock'
-        for k, v in new_hparams.items():
-            if k not in ['stocks','total_ts','eval_ts']:
-                name += f',{k}={v}'
-        name += ',' + str(time.time()).split('.')[1][:6]
+    name += f',tc={hparams["tc"]}' # + str(time.time()).split('.')[1][:6]
     
     # for each process, generate a seed, initiate inter-process communication pipe, and start worker.
     seeds = []
@@ -140,9 +134,9 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
     hparams['stocks'] = len(hparams['stocks'])
     hparams['n_trials'] = n_trials
     metrics = {'metrics/max_eval_sharpe': max(eval_curve)}
-    hparamwriter = SummaryWriter('../tensorboard_logs' if experiment is None else f'../tensorboard_logs/{experiment}')
-    hparamwriter.add_hparams(hparams, metrics, run_name=name)
-    hparamwriter.close()
+    # hparamwriter = SummaryWriter('../tensorboard_logs' if experiment is None else f'../tensorboard_logs/{experiment}')
+    # hparamwriter.add_hparams(hparams, metrics, run_name=name)
+    # hparamwriter.close()
 
     if process_queue is not None:
         process_queue.put(process_idx)
@@ -151,14 +145,8 @@ def run(new_hparams={}, n_trials=1, seed=None, name=None, experiment=None, proce
 
 # worker process to actually train the RL algorithm
 def worker(hparams, seed, pipe):
-    train_env = DailyTradingEnv(hparams['stocks'],
-                                dt.datetime(hparams['train_start'], 1, 1),
-                                dt.datetime(hparams['train_end'], 1, 1),
-                                hparams['train_directions'])
-    eval_env = DailyTradingEnv(hparams['stocks'],
-                               dt.datetime(hparams['eval_start'], 1, 1), 
-                               dt.datetime(hparams['eval_end'], 1, 1), 
-                               hparams['eval_directions'])
+    train_env = RandomEnv(hparams['stocks'],hparams['train_split'],tc=hparams['tc'])
+    eval_env = RandomEnv(hparams['stocks'],hparams['val_split'],tc=hparams['tc'])
 
     total_ts = hparams['total_ts']
     eval_ts = hparams['eval_ts']
@@ -221,15 +209,14 @@ def run_mp(experiment):
 def run_once(experiment):
     params = {
         'stocks': all_stocks,
-        'train_directions': '2010split',
-        'eval_directions': 'olivier',
-        
-        'total_ts': int(1e6),
+        'total_ts': int(5e6),
         'eval_ts': int(1e4),
+        'train_split':[(['2000-4-25','2009-1-1'], 'h_1'), (['2009-1-1','2018-1-1'], 'h_0')],
+	'val_split':[(['2020-1-1','2021-7-20'], 'olivier')]
     }
-    run(params, n_trials=20, experiment=experiment)
+    run(params, n_trials=20, name='test_final_mix_h' , experiment=experiment)
 
 
 if __name__ == '__main__':
-    run_once('test')
+    run_once('experiment')
     #run_mp('singlestock')

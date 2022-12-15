@@ -49,7 +49,6 @@ class DailyTradingEnv(gym.Env):
         self.last_prices = np.array(self.last_prices).T
         self.directions = np.array(self.directions).T
         self.dividends = np.array(self.dividends).T
-
         self.period_length = len(self.last_prices) - 2
 
         self.curr_portfolio = np.zeros(len(tickers))
@@ -57,7 +56,7 @@ class DailyTradingEnv(gym.Env):
         self.current_balance = 100000
         self.last_reward = 0
         # Cost as fraction of transaction amount
-        self.transaction_cost = 0.01
+        self.transaction_cost = 0.00
         
     def step(self, action: np.ndarray):
         assert len(action) == len(self.tickers) + 1
@@ -74,14 +73,14 @@ class DailyTradingEnv(gym.Env):
         next_day_div = self.dividends[self.curr_index + 1]
 
         shares = np.floor(self.current_balance * weights[1:] / curr_prices)
-        profits = np.dot(next_prices - curr_prices, shares) - np.sum(np.dot(curr_prices, np.abs(shares - self.curr_portfolio)))*self.transaction_cost
+        profits = np.dot(next_prices - curr_prices, shares)# - np.sum(np.dot(curr_prices, np.abs(shares - self.curr_portfolio)))*self.transaction_cost
         div_received = np.dot(next_day_div, shares)
 
         self.curr_portfolio = shares
 
-        reward = self._calc_reward(profits, div_received)
+        reward = self._calc_reward(profits,0) # div_received)
 
-        self.current_balance += profits + div_received
+        self.current_balance += profits  #+ div_received
         self.balance_record.append(self.current_balance)
         self.curr_index += 1
 
