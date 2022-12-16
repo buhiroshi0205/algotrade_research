@@ -22,11 +22,12 @@ class DailyTradingEnv(gym.Env):
         self.dividends = []
 
         self.reward_range = (0, np.inf)
-        # action space is equivalent to a boolean array. Index 0 is true if and only if we hold cash, and the Index i is true if and only if we buy the i-1'th stock today (and sell tomorrow)
-        # Note that there aren't transaction costs yet. Money is divided evenly into each stock that we choose to buy.
-        self.action_space = spaces.MultiBinary(len(tickers) + 1)
+        # action space is equivalent to a boolean array. Index i is true if and only if we buy the ith stock today (and sell tomorrow)
+        # Money is divided evenly into each stock that we choose to buy.
+        self.action_space = spaces.MultiBinary(len(tickers))
         # observation space is a float array. Index i = the fraction of the ensemble models that predict the i'th stock to go up
-        self.observation_space = spaces.Box(low=0, high=1, shape=(len(tickers),))
+        # self.observation_space = spaces.Box(low=0, high=1, shape=(len(tickers),))
+        self.observation_space = spaces.Box(low=0, high=1, shape=(2, len(tickers)))
 
         # load data
         for ticker in tickers:
@@ -55,12 +56,14 @@ class DailyTradingEnv(gym.Env):
         self.curr_portfolio = np.zeros(len(tickers))
         self.curr_index = 0
         self.current_balance = 100000
+        self.balance_record = [self.current_balance]
         self.last_reward = 0
         # Cost as fraction of transaction amount
         self.transaction_cost = 0.01
         
     def step(self, action: np.ndarray):
-        assert len(action) == len(self.tickers) + 1
+        # assert len(action) == len(self.tickers) + 1
+        assert len(action) == len(self.tickers)
 
         normalize = np.sum(action)
         if normalize > 0:
@@ -73,7 +76,8 @@ class DailyTradingEnv(gym.Env):
         next_prices = self.last_prices[self.curr_index + 1]
         next_day_div = self.dividends[self.curr_index + 1]
 
-        shares = np.floor(self.current_balance * weights[1:] / curr_prices)
+        # shares = np.floor(self.current_balance * weights[1:] / curr_prices)
+        shares = np.floor(self.current_balance * weights / curr_prices)
         profits = np.dot(next_prices - curr_prices, shares) - np.sum(np.dot(curr_prices, np.abs(shares - self.curr_portfolio)))*self.transaction_cost
         div_received = np.dot(next_day_div, shares)
 
@@ -110,5 +114,5 @@ class DailyTradingEnv(gym.Env):
         return reward
 
     def _get_obs(self):
-        return self.directions[self.curr_index]
-        # return np.array([self.directions[self.curr_index], self.curr_portfolio != 0])
+        # return self.directions[self.curr_index]
+        return np.array([self.directions[self.curr_index], self.curr_portfolio != 0])
